@@ -1,0 +1,27 @@
+name: Validate Spec + Plan
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  validate:
+    if: >
+      github.event.label.name == 'spec-flow:ready' &&
+      contains(github.event.issue.title, '[FEATURE]')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate spec and plan
+        run: npx spec-flow validate --issue-number ${{ github.event.issue.number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
