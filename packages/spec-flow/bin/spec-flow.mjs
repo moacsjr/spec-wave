@@ -28,6 +28,36 @@ program
   });
 
 program
+  .command('info')
+  .description('Mostra se o repositório atual foi inicializado e os dados do .spec-flow.json')
+  .option('--json', 'Saída em JSON (para uso programático)')
+  .action(async (options) => {
+    const { info } = await import('../src/commands/info.mjs');
+    await info(options);
+  });
+
+program
+  .command('refresh')
+  .description('Atualiza o .spec-flow.json local com os dados atuais do GitHub Project')
+  .option('--config', 'Re-consulta o Project e reescreve o .spec-flow.json')
+  .action(async (options) => {
+    const { refresh } = await import('../src/commands/refresh.mjs');
+    await refresh(options).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
+  .command('feature')
+  .description('Cria uma Feature, adiciona ao Project e move para 📥 Backlog')
+  .requiredOption('--title <title>', 'Título da feature (sem o prefixo [FEATURE])')
+  .option('--body <text>', 'Descrição da feature')
+  .option('--priority <p>', 'Prioridade: P0, P1, P2 ou P3 (adiciona label)')
+  .option('--area <area>', 'Área: Frontend, Backend, Mobile, Infra, DevOps ou Data')
+  .action(async (options) => {
+    const { feature } = await import('../src/commands/feature.mjs');
+    await feature(options).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
   .command('generate-plan')
   .description('Gera plan.md para uma Feature (usado pelo GitHub Action)')
   .requiredOption('--issue-number <n>', 'Número da issue no GitHub')

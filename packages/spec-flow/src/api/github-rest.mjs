@@ -62,6 +62,12 @@ export async function upsertFile(token, owner, repo, path, content, message) {
   });
 }
 
+export async function createIssue(token, owner, repo, title, body, labels) {
+  const octokit = makeOctokit(token);
+  const res = await octokit.rest.issues.create({ owner, repo, title, body, labels });
+  return { number: res.data.number, nodeId: res.data.node_id, url: res.data.html_url };
+}
+
 export async function getIssue(token, owner, repo, issueNumber) {
   const octokit = makeOctokit(token);
   const res = await octokit.rest.issues.get({ owner, repo, issue_number: issueNumber });

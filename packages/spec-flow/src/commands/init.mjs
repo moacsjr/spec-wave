@@ -1,10 +1,18 @@
 import * as p from '@clack/prompts';
 import chalk from 'chalk';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { resolveToken, verifyTokenScopes } from '../api/auth.mjs';
 import { runWizard } from '../ui/wizard.mjs';
 import { setupProject } from '../setup/project.mjs';
 import { setupLabels } from '../setup/labels.mjs';
 import { setupFiles } from '../setup/files.mjs';
+import { upsertFile } from '../api/github-rest.mjs';
+import { CONFIG_FILE } from '../config.mjs';
+
+const __dir = path.dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(path.join(__dir, '..', '..', 'package.json'), 'utf-8'));
 
 export async function init(options) {
   // --- Token ---
@@ -67,7 +75,7 @@ export async function init(options) {
   }
 
   // --- Phase 1: Project Board ---
-  let projectUrl;
+  let projectUrl, projectId, projectNumber, etapaFieldId, stageOptions;
   if (options.skipProject) {
     p.log.info('Pulando criação do GitHub Project (--skip-project).');
   } else {
@@ -76,6 +84,10 @@ export async function init(options) {
     try {
       const result = await setupProject(token, owner, repo, projectTitle, projectSpinner);
       projectUrl = result.projectUrl;
+      projectId = result.projectId;
+      projectNumber = result.projectNumber;
+      etapaFieldId = result.etapaFieldId;
+      stageOptions = result.stageOptions;
       projectSpinner.stop(`Projeto criado: ${chalk.cyan(projectUrl)}`);
       if (result.linkWarning) {
         p.log.warn(
@@ -123,6 +135,40 @@ export async function init(options) {
       p.log.info('Use --skip-files para pular esta fase e tentar de novo.');
       process.exit(1);
     }
+  }
+
+  // --- Marcador de configuração (.spec-flow.json) ---
+  // Commitado no repo-alvo para que a skill detecte, em sessões futuras, que o
+  // init já rodou e qual project/versão foi usado. É a fonte de estado persistente.
+  const configSpinner = p.spinner();
+  configSpinner.start(`Gravando ${CONFIG_FILE}...`);
+  try {
+    const config = {
+      version: pkg.version,
+      owner,
+      repo,
+      project: {
+        title: projectTitle,
+        url: projectUrl ?? null,
+        id: projectId ?? null,
+        number: projectNumber ?? null,
+        etapaFieldId: etapaFieldId ?? null,
+        stageOptions: stageOptions ?? null,
+      },
+      initializedAt: new Date().toISOString(),
+    };
+    await upsertFile(
+      token,
+      owner,
+      repo,
+      CONFIG_FILE,
+      JSON.stringify(config, null, 2) + '\n',
+      'chore: record spec-flow config [spec-flow]'
+    );
+    configSpinner.stop(`${CONFIG_FILE} gravado (spec-flow v${pkg.version})`);
+  } catch (err) {
+    configSpinner.stop('');
+    p.log.warn(`Não foi possível gravar ${CONFIG_FILE}: ${err.message}`);
   }
 
   p.note(

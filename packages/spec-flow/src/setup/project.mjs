@@ -25,7 +25,7 @@ export async function setupProject(token, owner, repo, projectTitle, spinner) {
   ]);
 
   spinner.message('Criando GitHub Project...');
-  const { projectId, projectUrl } = await createProject(token, ownerId, projectTitle);
+  const { projectId, projectNumber, projectUrl } = await createProject(token, ownerId, projectTitle);
 
   spinner.message('Criando campos customizados...');
   const selectFields = CUSTOM_FIELDS.filter(f => f.dataType === 'SINGLE_SELECT');
@@ -34,14 +34,21 @@ export async function setupProject(token, owner, repo, projectTitle, spinner) {
 
   // Sequential creation: the GitHub Projects v2 API raises "Position has already
   // been taken" when multiple SINGLE_SELECT fields are created concurrently.
+  let etapaFieldId, stageOptions;
   for (const f of allFields) {
     spinner.message(`Criando campo "${f.name}"...`);
-    await createSingleSelectField(token, projectId, f.name, f.options);
+    const created = await createSingleSelectField(token, projectId, f.name, f.options);
+    if (f.name === ETAPA_FIELD.name) {
+      etapaFieldId = created.id;
+      stageOptions = created.options;
+    }
   }
   for (const f of textFields) {
     spinner.message(`Criando campo "${f.name}"...`);
     await createTextField(token, projectId, f.name);
   }
+
+  const result = { projectId, projectNumber, projectUrl, etapaFieldId, stageOptions };
 
   spinner.message('Vinculando projeto ao repositório...');
   try {
@@ -50,8 +57,8 @@ export async function setupProject(token, owner, repo, projectTitle, spinner) {
     // Linking is cosmetic (shows project in repo's Projects tab).
     // It requires `repo` scope in addition to `project`. Skip gracefully.
     spinner.message('');
-    return { projectId, projectUrl, linkWarning: err.message };
+    return { ...result, linkWarning: err.message };
   }
 
-  return { projectId, projectUrl };
+  return result;
 }

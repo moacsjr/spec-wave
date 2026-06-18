@@ -1,5 +1,9 @@
 // Single source of truth for all RFC-001 data
 
+// Marcador de configuração gravado pelo `init` na raiz do repo-alvo e lido
+// pelo comando `info` (e pela skill) para detectar se o spec-flow já foi configurado.
+export const CONFIG_FILE = '.spec-flow.json';
+
 export const STATUS_OPTIONS = [
   { name: '📥 Backlog',          color: 'GRAY'   },
   { name: '🎯 Priorizado',       color: 'BLUE'   },

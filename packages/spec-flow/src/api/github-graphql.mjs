@@ -69,6 +69,7 @@ export async function createSingleSelectField(token, projectId, name, options) {
           ... on ProjectV2SingleSelectField {
             id
             name
+            options { id name }
           }
         }
       }
@@ -78,7 +79,112 @@ export async function createSingleSelectField(token, projectId, name, options) {
     name,
     options: options.map(o => ({ name: o.name, color: o.color, description: o.description || '' })),
   });
-  return result.createProjectV2Field.projectV2Field.id;
+  const field = result.createProjectV2Field.projectV2Field;
+  const optionIds = {};
+  for (const o of field.options) optionIds[o.name] = o.id;
+  return { id: field.id, options: optionIds };
+}
+
+// Lê um campo SINGLE_SELECT existente (id + mapa nome→id das opções). Usado pelo
+// comando `feature` como fallback quando o .spec-flow.json não traz os IDs.
+export async function getSingleSelectField(token, projectId, fieldName) {
+  const client = makeClient(token);
+  const result = await client(`
+    query GetField($projectId: ID!) {
+      node(id: $projectId) {
+        ... on ProjectV2 {
+          fields(first: 50) {
+            nodes {
+              ... on ProjectV2SingleSelectField {
+                id
+                name
+                options { id name }
+              }
+            }
+          }
+        }
+      }
+    }
+  `, { projectId });
+  const field = result.node.fields.nodes.find(f => f && f.name === fieldName);
+  if (!field) return null;
+  const optionIds = {};
+  for (const o of field.options) optionIds[o.name] = o.id;
+  return { id: field.id, options: optionIds };
+}
+
+// Lê os metadados atuais de um Project (id, number, url, title) + o campo "Etapa"
+// (id e opções), em uma única query. Usado pelo comando `refresh`.
+export async function getProjectSnapshot(token, projectId) {
+  const client = makeClient(token);
+  const result = await client(`
+    query Snapshot($projectId: ID!) {
+      node(id: $projectId) {
+        ... on ProjectV2 {
+          id
+          number
+          url
+          title
+          fields(first: 50) {
+            nodes {
+              ... on ProjectV2SingleSelectField {
+                id
+                name
+                options { id name }
+              }
+            }
+          }
+        }
+      }
+    }
+  `, { projectId });
+  const project = result.node;
+  if (!project) return null;
+  const etapa = project.fields.nodes.find(f => f && f.name === 'Etapa');
+  let etapaFieldId = null, stageOptions = null;
+  if (etapa) {
+    etapaFieldId = etapa.id;
+    stageOptions = {};
+    for (const o of etapa.options) stageOptions[o.name] = o.id;
+  }
+  return {
+    id: project.id,
+    number: project.number,
+    url: project.url,
+    title: project.title,
+    etapaFieldId,
+    stageOptions,
+  };
+}
+
+// Adiciona uma issue/PR (pelo node id do conteúdo) ao Project. Retorna o id do item criado.
+export async function addProjectItem(token, projectId, contentId) {
+  const client = makeClient(token);
+  const result = await client(`
+    mutation AddItem($projectId: ID!, $contentId: ID!) {
+      addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+        item { id }
+      }
+    }
+  `, { projectId, contentId });
+  return result.addProjectV2ItemById.item.id;
+}
+
+// Define o valor de um campo SINGLE_SELECT para um item do Project.
+export async function setItemSingleSelect(token, projectId, itemId, fieldId, optionId) {
+  const client = makeClient(token);
+  await client(`
+    mutation SetField($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+      updateProjectV2ItemFieldValue(input: {
+        projectId: $projectId
+        itemId: $itemId
+        fieldId: $fieldId
+        value: { singleSelectOptionId: $optionId }
+      }) {
+        projectV2Item { id }
+      }
+    }
+  `, { projectId, itemId, fieldId, optionId });
 }
 
 export async function createTextField(token, projectId, name) {
