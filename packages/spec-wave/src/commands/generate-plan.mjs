@@ -28,7 +28,7 @@ export async function generatePlan({ issueNumber }) {
     throw new Error(
       'GITHUB_REPOSITORY env var não definida.\n' +
       'Este comando roda no GitHub Actions. Para testar localmente:\n' +
-      '  GITHUB_REPOSITORY=owner/repo spec-flow generate-plan --issue-number 1'
+      '  GITHUB_REPOSITORY=owner/repo spec-wave generate-plan --issue-number 1'
     );
   }
 
@@ -49,14 +49,14 @@ export async function generatePlan({ issueNumber }) {
 
   // Commit and push
   const git = (cmd) => execSync(cmd, { stdio: 'inherit' });
-  git(`git config user.email "spec-flow[bot]@github.com"`);
-  git(`git config user.name "spec-flow[bot]"`);
+  git(`git config user.email "spec-wave[bot]@github.com"`);
+  git(`git config user.name "spec-wave[bot]"`);
   git(`git add "${filePath}"`);
-  git(`git commit -m "docs: generate plan.md for ${slug} [spec-flow]"`);
+  git(`git commit -m "docs: generate plan.md for ${slug} [spec-wave]"`);
   git('git push');
 
   // Remove trigger label
-  await removeLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-flow:plan');
+  await removeLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-wave:plan');
 
   // Comment on issue
   await commentOnIssue(
@@ -64,7 +64,7 @@ export async function generatePlan({ issueNumber }) {
     `📋 **plan.md gerado automaticamente!**\n\n` +
     `📄 Arquivo: [\`${filePath}\`](${filePath})\n\n` +
     `Revise o plano e, quando estiver pronto, mova o card para a coluna **📋 Spec** ou use:\n` +
-    `\`\`\`\ngh issue edit ${issueNumber} --add-label "spec-flow:spec"\n\`\`\``
+    `\`\`\`\ngh issue edit ${issueNumber} --add-label "spec-wave:spec"\n\`\`\``
   );
 
   console.log(`plan.md criado em: ${filePath}`);

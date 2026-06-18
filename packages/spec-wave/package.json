@@ -1,10 +1,10 @@
 {
-  "name": "spec-flow",
+  "name": "spec-wave",
   "version": "0.1.0",
   "description": "Setup spec-driven GitHub workflow with Projects v2, labels, issue templates, and AI-powered Actions",
   "type": "module",
   "bin": {
-    "spec-flow": "./bin/spec-flow.mjs"
+    "spec-wave": "./bin/spec-wave.mjs"
   },
   "files": [
     "bin",

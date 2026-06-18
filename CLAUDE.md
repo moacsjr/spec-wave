@@ -6,15 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repo has two parts:
 1. **`rfc/`** — Process documentation in Brazilian Portuguese defining the spec-driven workflow (RFC-001)
-2. **`packages/spec-flow/`** — A Node.js CLI (`npx spec-flow`) and Claude Code skill (`skill/SKILL.md`) that implement the RFC
+2. **`packages/spec-wave/`** — A Node.js CLI (`npx spec-wave`) and Claude Code skill (`skill/SKILL.md`) that implement the RFC
 
 All documentation is written in **Brazilian Portuguese**.
 
 ## Architecture
 
 ```
-packages/spec-flow/
-├── bin/spec-flow.mjs          Entry point (Commander CLI)
+packages/spec-wave/
+├── bin/spec-wave.mjs          Entry point (Commander CLI)
 ├── src/
 │   ├── config.mjs             Single source of truth: kanban columns, fields, labels
 │   ├── commands/              One file per CLI command
@@ -34,16 +34,16 @@ skill/SKILL.md                 Claude Code skill for guiding the workflow
 npm install
 
 # Run CLI locally (no build step needed — pure ESM)
-node packages/spec-flow/bin/spec-flow.mjs --help
-node packages/spec-flow/bin/spec-flow.mjs init --dry-run
+node packages/spec-wave/bin/spec-wave.mjs --help
+node packages/spec-wave/bin/spec-wave.mjs init --dry-run
 
 # Test against a real repo
-node packages/spec-flow/bin/spec-flow.mjs init --repo owner/test-repo
+node packages/spec-wave/bin/spec-wave.mjs init --repo owner/test-repo
 ```
 
 ## Key Concepts
 
-**Trigger strategy (Phase 1 — labels):** GitHub Actions cannot trigger on Projects v2 column moves. Instead, the skill adds labels (`spec-flow:plan`, `spec-flow:spec`, `spec-flow:ready`, `spec-flow:decompose`) to issues programmatically, which trigger the corresponding workflows. Webhook-based triggers are planned for Phase 2.
+**Trigger strategy (Phase 1 — labels):** GitHub Actions cannot trigger on Projects v2 column moves. Instead, the skill adds labels (`spec-wave:plan`, `spec-wave:spec`, `spec-wave:ready`, `spec-wave:decompose`) to issues programmatically, which trigger the corresponding workflows. Webhook-based triggers are planned for Phase 2.
 
 **Document generation:** `generate-plan` and `generate-spec` commands call the Anthropic API (`ANTHROPIC_API_KEY` env var) and commit generated files to `docs/features/<slug>/`.
 
@@ -58,5 +58,5 @@ node packages/spec-flow/bin/spec-flow.mjs init --repo owner/test-repo
 ## Adding the Skill
 
 To use the Claude Code skill in any project:
-1. Copy `skill/SKILL.md` to `~/.claude/skills/spec-flow/SKILL.md`
-2. Add to the project's CLAUDE.md: trigger `/spec-flow` to invoke the skill
+1. Copy `skill/SKILL.md` to `~/.claude/skills/spec-wave/SKILL.md`
+2. Add to the project's CLAUDE.md: trigger `/spec-wave` to invoke the skill

@@ -26,32 +26,32 @@ export async function setupFiles(token, owner, repo, spinner) {
     {
       path: '.github/ISSUE_TEMPLATE/plan-template.md',
       content: readTemplate('issue', 'plan-template.md'),
-      message: 'chore: add plan.md issue template [spec-flow]',
+      message: 'chore: add plan.md issue template [spec-wave]',
     },
     {
       path: '.github/ISSUE_TEMPLATE/spec-template.md',
       content: readTemplate('issue', 'spec-template.md'),
-      message: 'chore: add spec.md issue template [spec-flow]',
+      message: 'chore: add spec.md issue template [spec-wave]',
     },
     {
       path: '.github/workflows/generate-plan.yml',
       content: readTemplate('workflows', 'generate-plan.yml'),
-      message: 'chore: add generate-plan workflow [spec-flow]',
+      message: 'chore: add generate-plan workflow [spec-wave]',
     },
     {
       path: '.github/workflows/generate-spec.yml',
       content: readTemplate('workflows', 'generate-spec.yml'),
-      message: 'chore: add generate-spec workflow [spec-flow]',
+      message: 'chore: add generate-spec workflow [spec-wave]',
     },
     {
       path: '.github/workflows/validate.yml',
       content: readTemplate('workflows', 'validate.yml'),
-      message: 'chore: add validate workflow [spec-flow]',
+      message: 'chore: add validate workflow [spec-wave]',
     },
     {
       path: '.github/workflows/decompose.yml',
       content: readTemplate('workflows', 'decompose.yml'),
-      message: 'chore: add decompose workflow [spec-flow]',
+      message: 'chore: add decompose workflow [spec-wave]',
     },
   ];
 

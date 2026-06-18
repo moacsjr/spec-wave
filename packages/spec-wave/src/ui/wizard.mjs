@@ -2,7 +2,7 @@ import * as p from '@clack/prompts';
 import { execSync } from 'node:child_process';
 
 export async function runWizard() {
-  p.intro('spec-flow — configuração do fluxo spec-driven');
+  p.intro('spec-wave — configuração do fluxo spec-driven');
 
   const answers = await p.group(
     {
@@ -19,8 +19,8 @@ export async function runWizard() {
       projectTitle: ({ results }) =>
         p.text({
           message: 'Nome do GitHub Project:',
-          defaultValue: `${results.repo?.split('/')[1] ?? 'projeto'} — Spec Flow`,
-          placeholder: 'Meu Projeto — Spec Flow',
+          defaultValue: `${results.repo?.split('/')[1] ?? 'projeto'} — Spec Wave`,
+          placeholder: 'Meu Projeto — Spec Wave',
         }),
 
       triggerStrategy: () =>

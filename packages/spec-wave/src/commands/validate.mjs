@@ -12,7 +12,7 @@ export async function validate({ issueNumber }) {
     throw new Error(
       'GITHUB_REPOSITORY env var não definida.\n' +
       'Este comando roda no GitHub Actions. Para testar localmente:\n' +
-      '  GITHUB_REPOSITORY=owner/repo spec-flow validate --issue-number 1'
+      '  GITHUB_REPOSITORY=owner/repo spec-wave validate --issue-number 1'
     );
   }
 
@@ -49,17 +49,17 @@ export async function validate({ issueNumber }) {
   }
 
   // Remove trigger label
-  await removeLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-flow:ready');
+  await removeLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-wave:ready');
 
   if (errors.length > 0) {
     await commentOnIssue(
       token, owner, repo, parseInt(issueNumber, 10),
       `⚠️ **Validação falhou — Feature não está pronta.**\n\n` +
       errors.join('\n') +
-      `\n\nCorreija os problemas e adicione novamente a label \`spec-flow:ready\`.`
+      `\n\nCorreija os problemas e adicione novamente a label \`spec-wave:ready\`.`
     );
     // Send back to spec stage
-    await addLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-flow:spec');
+    await addLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-wave:spec');
     console.error('Validação falhou:', errors.join(', '));
     process.exit(1);
   }
@@ -70,7 +70,7 @@ export async function validate({ issueNumber }) {
     `- [\`${planPath}\`](${planPath}) ✓\n` +
     `- [\`${specPath}\`](${specPath}) ✓\n\n` +
     `A Feature está pronta para decomposição. Mova o card para **📋 Backlog Técnico** ou use:\n` +
-    `\`\`\`\ngh issue edit ${issueNumber} --add-label "spec-flow:decompose"\n\`\`\``
+    `\`\`\`\ngh issue edit ${issueNumber} --add-label "spec-wave:decompose"\n\`\`\``
   );
 
   console.log('Validação OK. Feature pronta para decomposição.');

@@ -86,7 +86,7 @@ export async function createSingleSelectField(token, projectId, name, options) {
 }
 
 // Lê um campo SINGLE_SELECT existente (id + mapa nome→id das opções). Usado pelo
-// comando `feature` como fallback quando o .spec-flow.json não traz os IDs.
+// comando `feature` como fallback quando o .spec-wave.json não traz os IDs.
 export async function getSingleSelectField(token, projectId, fieldName) {
   const client = makeClient(token);
   const result = await client(`

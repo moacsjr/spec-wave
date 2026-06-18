@@ -1,8 +1,8 @@
 // Single source of truth for all RFC-001 data
 
 // Marcador de configuração gravado pelo `init` na raiz do repo-alvo e lido
-// pelo comando `info` (e pela skill) para detectar se o spec-flow já foi configurado.
-export const CONFIG_FILE = '.spec-flow.json';
+// pelo comando `info` (e pela skill) para detectar se o spec-wave já foi configurado.
+export const CONFIG_FILE = '.spec-wave.json';
 
 export const STATUS_OPTIONS = [
   { name: '📥 Backlog',          color: 'GRAY'   },
@@ -92,10 +92,10 @@ export const PRIORITY_LABELS = [
 ];
 
 export const TRIGGER_LABELS = [
-  { name: 'spec-flow:plan',      color: 'BFD4F2', description: 'Gerar plan.md via GitHub Action'     },
-  { name: 'spec-flow:spec',      color: 'BFD4F2', description: 'Gerar spec.md via GitHub Action'     },
-  { name: 'spec-flow:ready',     color: '0E8A16', description: 'Validar spec+plan e mover para Ready' },
-  { name: 'spec-flow:decompose', color: 'BFD4F2', description: 'Decompor em Stories e Tasks'         },
+  { name: 'spec-wave:plan',      color: 'BFD4F2', description: 'Gerar plan.md via GitHub Action'     },
+  { name: 'spec-wave:spec',      color: 'BFD4F2', description: 'Gerar spec.md via GitHub Action'     },
+  { name: 'spec-wave:ready',     color: '0E8A16', description: 'Validar spec+plan e mover para Ready' },
+  { name: 'spec-wave:decompose', color: 'BFD4F2', description: 'Decompor em Stories e Tasks'         },
 ];
 
 export const ALL_LABELS = [...TYPE_LABELS, ...PRIORITY_LABELS, ...TRIGGER_LABELS];

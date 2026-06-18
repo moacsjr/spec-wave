@@ -34,7 +34,7 @@ export async function feature(options) {
 
   const configPath = path.join(process.cwd(), CONFIG_FILE);
   if (!existsSync(configPath)) {
-    p.log.error(`Repositório não inicializado (sem ${CONFIG_FILE}). Rode \`spec-flow init\` primeiro.`);
+    p.log.error(`Repositório não inicializado (sem ${CONFIG_FILE}). Rode \`spec-wave init\` primeiro.`);
     process.exitCode = 1;
     return;
   }
@@ -51,7 +51,7 @@ export async function feature(options) {
   const { owner, repo } = config;
   const project = config.project || {};
   if (!owner || !repo) {
-    p.log.error(`${CONFIG_FILE} não contém owner/repo. Rode \`spec-flow init\` novamente.`);
+    p.log.error(`${CONFIG_FILE} não contém owner/repo. Rode \`spec-wave init\` novamente.`);
     process.exitCode = 1;
     return;
   }
@@ -65,7 +65,7 @@ export async function feature(options) {
     return;
   }
 
-  p.intro(chalk.bold('spec-flow feature'));
+  p.intro(chalk.bold('spec-wave feature'));
 
   // 1. Cria a issue com labels [FEATURE] + prioridade
   const labels = ['[FEATURE]'];
@@ -88,7 +88,7 @@ export async function feature(options) {
   if (!project.id) {
     p.log.warn(
       `Project não configurado no ${CONFIG_FILE} — a issue foi criada mas não foi adicionada ao board.\n` +
-      'Re-rode `spec-flow init` (sem --skip-project) para registrar o Project.'
+      'Re-rode `spec-wave init` (sem --skip-project) para registrar o Project.'
     );
     p.outro(`Feature #${issue.number} criada (fora do board).`);
     return;
@@ -99,7 +99,7 @@ export async function feature(options) {
   try {
     const itemId = await addProjectItem(token, project.id, issue.nodeId);
 
-    // Resolve o campo Etapa: usa os IDs do .spec-flow.json; se ausentes
+    // Resolve o campo Etapa: usa os IDs do .spec-wave.json; se ausentes
     // (repos inicializados antes desta versão), consulta o Project.
     let fieldId = project.etapaFieldId;
     let optionId = project.stageOptions?.[INITIAL_STAGE];
@@ -127,6 +127,6 @@ export async function feature(options) {
 
   p.outro(
     `${chalk.green('✓')} Feature #${issue.number} criada em "${INITIAL_STAGE}".\n` +
-    `  Próximo: \`/spec-flow plan ${issue.number}\` para iniciar o planejamento técnico.`
+    `  Próximo: \`/spec-wave plan ${issue.number}\` para iniciar o planejamento técnico.`
   );
 }

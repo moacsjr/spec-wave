@@ -58,7 +58,7 @@ export async function init(options) {
       process.exit(1);
     }
     [owner, repo] = options.repo.split('/');
-    projectTitle = options.projectTitle ?? `${repo} — Spec Flow`;
+    projectTitle = options.projectTitle ?? `${repo} — Spec Wave`;
     p.log.info(`Repositório: ${owner}/${repo}`);
     p.log.info(`Projeto: ${projectTitle}`);
   } else {
@@ -137,7 +137,7 @@ export async function init(options) {
     }
   }
 
-  // --- Marcador de configuração (.spec-flow.json) ---
+  // --- Marcador de configuração (.spec-wave.json) ---
   // Commitado no repo-alvo para que a skill detecte, em sessões futuras, que o
   // init já rodou e qual project/versão foi usado. É a fonte de estado persistente.
   const configSpinner = p.spinner();
@@ -163,9 +163,9 @@ export async function init(options) {
       repo,
       CONFIG_FILE,
       JSON.stringify(config, null, 2) + '\n',
-      'chore: record spec-flow config [spec-flow]'
+      'chore: record spec-wave config [spec-wave]'
     );
-    configSpinner.stop(`${CONFIG_FILE} gravado (spec-flow v${pkg.version})`);
+    configSpinner.stop(`${CONFIG_FILE} gravado (spec-wave v${pkg.version})`);
   } catch (err) {
     configSpinner.stop('');
     p.log.warn(`Não foi possível gravar ${CONFIG_FILE}: ${err.message}`);
@@ -181,13 +181,13 @@ export async function init(options) {
   );
 
   p.outro(
-    `\n${chalk.green('✓')} spec-flow configurado com sucesso!\n\n` +
+    `\n${chalk.green('✓')} spec-wave configurado com sucesso!\n\n` +
     (projectUrl ? `  Projeto: ${chalk.cyan(projectUrl)}\n\n` : '') +
     `  Próximos passos:\n` +
     `  1. Adicione ANTHROPIC_API_KEY como secret no repositório\n` +
     `  2. Configure o board view para agrupar por "Etapa"\n` +
     `  3. Crie uma Feature com o prefixo [FEATURE] no título\n` +
-    `  4. Use a skill spec-flow para guiar o fluxo\n\n` +
+    `  4. Use a skill spec-wave para guiar o fluxo\n\n` +
     `  ${chalk.dim('Para usar a skill: adicione skill/SKILL.md ao seu projeto Claude Code')}`
   );
 }

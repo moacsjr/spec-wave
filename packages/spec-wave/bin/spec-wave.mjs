@@ -9,16 +9,16 @@ const __dir = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.join(__dir, '..', 'package.json'), 'utf-8'));
 
 program
-  .name('spec-flow')
+  .name('spec-wave')
   .description('Setup spec-driven GitHub workflow with Projects v2')
   .version(pkg.version);
 
 program
   .command('init')
-  .description('Configura spec-flow em um repositório GitHub')
+  .description('Configura spec-wave em um repositório GitHub')
   .option('--dry-run', 'Simula a configuração sem fazer alterações')
   .option('--repo <owner/repo>', 'Repositório GitHub (ignora o wizard interativo)')
-  .option('--project-title <title>', 'Nome do GitHub Project (padrão: "<repo> — Spec Flow")')
+  .option('--project-title <title>', 'Nome do GitHub Project (padrão: "<repo> — Spec Wave")')
   .option('--skip-project', 'Pula a criação do GitHub Project (use se já foi criado)')
   .option('--skip-labels', 'Pula a criação das labels')
   .option('--skip-files', 'Pula a criação dos arquivos de workflow')
@@ -29,7 +29,7 @@ program
 
 program
   .command('info')
-  .description('Mostra se o repositório atual foi inicializado e os dados do .spec-flow.json')
+  .description('Mostra se o repositório atual foi inicializado e os dados do .spec-wave.json')
   .option('--json', 'Saída em JSON (para uso programático)')
   .action(async (options) => {
     const { info } = await import('../src/commands/info.mjs');
@@ -38,8 +38,8 @@ program
 
 program
   .command('refresh')
-  .description('Atualiza o .spec-flow.json local com os dados atuais do GitHub Project')
-  .option('--config', 'Re-consulta o Project e reescreve o .spec-flow.json')
+  .description('Atualiza o .spec-wave.json local com os dados atuais do GitHub Project')
+  .option('--config', 'Re-consulta o Project e reescreve o .spec-wave.json')
   .action(async (options) => {
     const { refresh } = await import('../src/commands/refresh.mjs');
     await refresh(options).catch(err => { console.error(err.message); process.exit(1); });

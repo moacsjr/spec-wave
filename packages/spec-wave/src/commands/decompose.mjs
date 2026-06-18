@@ -38,7 +38,7 @@ export async function decompose({ issueNumber }) {
     throw new Error(
       'GITHUB_REPOSITORY env var não definida.\n' +
       'Este comando roda no GitHub Actions. Para testar localmente:\n' +
-      '  GITHUB_REPOSITORY=owner/repo spec-flow decompose --issue-number 1'
+      '  GITHUB_REPOSITORY=owner/repo spec-wave decompose --issue-number 1'
     );
   }
 
@@ -99,7 +99,7 @@ export async function decompose({ issueNumber }) {
   }
 
   // Remove trigger label
-  await removeLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-flow:decompose');
+  await removeLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-wave:decompose');
 
   const storyList = created.map(s => `- ${s.url} — ${s.title}`).join('\n');
   await commentOnIssue(

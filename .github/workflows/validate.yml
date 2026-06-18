@@ -7,7 +7,7 @@ on:
 jobs:
   validate:
     if: >
-      github.event.label.name == 'spec-flow:ready' &&
+      github.event.label.name == 'spec-wave:ready' &&
       contains(github.event.issue.title, '[FEATURE]')
     runs-on: ubuntu-latest
     permissions:
@@ -21,7 +21,7 @@ jobs:
           node-version: '20'
 
       - name: Validate spec and plan
-        run: npx spec-flow validate --issue-number ${{ github.event.issue.number }}
+        run: npx spec-wave validate --issue-number ${{ github.event.issue.number }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
