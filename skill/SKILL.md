@@ -238,9 +238,12 @@ Inicia a geração da **especificação funcional** para uma Feature. É o **pri
 
 Inicia a geração do **plano técnico** para uma Feature, derivado da especificação. É o **segundo** passo (a spec deve existir antes).
 
+O plano técnico segue o schema do RFC-002 §3.2: **Estratégia Técnica** (com Matriz de Rastreabilidade), **Detalhamento da Implementação**, **Segurança e Conformidade**, **Estratégia de Testes** e **Rollback e Monitoramento**. O agente usa o `tech_context` do repositório (`.github/config/tech_context.yml` + versões de pacote e migrations recentes) para embasar o plano e usar APENAS as tecnologias declaradas. Para desvios pontuais, adicione uma seção `## Tech Override` no corpo da issue (RFC-002 §4.3).
+
 **Passos:**
 1. Verifique se `spec.md` já existe em `docs/features/<slug>/` (o plano usa a especificação funcional como contexto). Se não existir, gere a spec primeiro com `/spec-wave spec <número>`.
-2. Adicione a label de gatilho:
+2. (Opcional) Confirme que `.github/config/tech_context.yml` reflete a stack atual do repo — o `init` gera um scaffold que deve ser ajustado pelo time.
+3. Adicione a label de gatilho:
    ```bash
    gh issue edit <número> --add-label "spec-wave:plan"
    ```

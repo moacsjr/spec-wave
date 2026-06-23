@@ -7,16 +7,23 @@ import { slugify } from '../lib/slugify.mjs';
 
 const SYSTEM_PROMPT = `Você é um Product Manager experiente. Gere uma especificação funcional (spec.md) completa para a Feature descrita pelo usuário.
 
-O spec deve conter exatamente estas seções em português:
-# Objetivo
+O spec deve conter EXATAMENTE estas seções em português, nesta ordem:
+# Visão Geral
+  - Objetivo, Personas e Critérios de Sucesso como bullets.
 # Regras de Negócio
 # Fluxos
+  - Subseções: ## Fluxo Principal (Happy Path), ## Fluxos Alternativos, ## Cenários de Erro.
 # Critérios de Aceite
-# Casos de Erro
+  - OBRIGATORIAMENTE no formato Gherkin, dentro de um bloco \`\`\`gherkin com Given/When/Then. Um cenário por critério.
 # Dependências
+  - Subdivida em Internas e Externas.
+# Requisitos Não-Funcionais
+  - Performance, Segurança e Usabilidade.
 
-Para cada seção, seja específico e detalhado. Os Critérios de Aceite devem estar no formato de checklist markdown (- [ ] item).
-Responda APENAS com o conteúdo do spec.md, sem texto adicional.`;
+Regras:
+- NÃO invente regras de negócio. Se faltar informação, marque explicitamente com "[TODO: requer esclarecimento do PO]".
+- Seja específico e detalhado em cada seção.
+- Responda APENAS com o conteúdo do spec.md, sem texto adicional.`;
 
 export async function generateSpec({ issueNumber }) {
   const token = await resolveToken();
@@ -36,7 +43,18 @@ export async function generateSpec({ issueNumber }) {
   const featureDir = `docs/features/${slug}`;
   const filePath = `${featureDir}/spec.md`;
 
-  const userContent = `Feature: ${issue.title}\n\nDescrição:\n${issue.body || '(sem descrição)'}`;
+  // Payload estruturado (RFC-002 §5.1): metadata + entrada de negócio.
+  const payload = {
+    metadata: {
+      feature_title: issue.title,
+      feature_description: issue.body || '(sem descrição)',
+      labels: (issue.labels || []).map((l) => (typeof l === 'string' ? l : l.name)),
+    },
+    business_input: {
+      raw: issue.body || '(sem descrição)',
+    },
+  };
+  const userContent = `Gere o spec.md a partir deste payload JSON:\n\n${JSON.stringify(payload, null, 2)}`;
 
   console.log(`Gerando spec.md para: ${issue.title}`);
   const content = await generateDocument(SYSTEM_PROMPT, userContent);

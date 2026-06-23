@@ -6,30 +6,46 @@ labels: "[FEATURE]"
 assignees: ""
 ---
 
-# Frontend
+# Estratégia Técnica
 
-<!-- Componentes, rotas, estados, integrações de UI -->
+- **Abordagem Arquitetural:** <!-- ex.: CQRS, Event Sourcing, REST -->
+- **Decisões-Chave:** <!-- Justificativa das tecnologias/padrões escolhidos -->
+- **Matriz de Rastreabilidade:** <!-- Cada Critério de Aceite do spec mapeado para um componente técnico -->
 
-# Backend
+| Critério de Aceite | Componente Técnico |
+|--------------------|--------------------|
+|                    |                    |
 
-<!-- Endpoints, serviços, regras de negócio -->
+# Detalhamento da Implementação
 
-# Banco de dados
+## Backend
 
-<!-- Migrations, tabelas, índices, queries relevantes -->
+<!-- Endpoints, DTOs, controllers, serviços, casos de uso, jobs/filas -->
 
-# Infraestrutura
+## Banco de Dados
 
-<!-- Configurações de ambiente, variáveis, serviços externos -->
+<!-- Novas tabelas, migrations, índices -->
 
-# Segurança
+## Frontend
 
-<!-- Autenticação, autorização, validações críticas -->
+<!-- Componentes/telas, gerenciamento de estado, rotas e guards -->
 
-# Testes
+## Infraestrutura
 
-<!-- Estratégia de testes: unitários, integração, E2E -->
+<!-- ConfigMaps/Secrets, pipeline CI/CD, feature flags e estratégia de rollout -->
 
-# Estimativa (Story Points)
+# Segurança e Conformidade
 
-<!-- 1 / 2 / 3 / 5 / 8 / 13 / 21 -->
+<!-- Autenticação/autorização (quais papéis acessam?), criptografia (em repouso/trânsito), logging e auditoria -->
+
+# Estratégia de Testes
+
+- **Unitários:** <!-- Escopo e frameworks -->
+- **Integração:** <!-- Escopo e mocks -->
+- **E2E:** <!-- Caminhos críticos -->
+
+# Rollback e Monitoramento
+
+- **Plano de Rollback:** <!-- Rollback de banco, revert de código -->
+- **Métricas Observadas:** <!-- Dashboards (New Relic/Datadog) -->
+- **Alertas:** <!-- Thresholds e caminhos de escalonamento -->

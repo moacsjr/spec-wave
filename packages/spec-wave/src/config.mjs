@@ -147,14 +147,24 @@ export const ISSUE_TEMPLATE_FILES = [
   'spec-template.md',
 ];
 
-export const REQUIRED_PLAN_SECTIONS = [
-  'Frontend',
-  'Backend',
-  'Banco de dados',
-  'Testes',
+export const REQUIRED_SPEC_SECTIONS = [
+  'Visão Geral',
+  'Critérios de Aceite',
+  'Requisitos Não-Funcionais',
 ];
 
-export const REQUIRED_SPEC_SECTIONS = [
-  'Objetivo',
-  'Critérios de Aceite',
+export const REQUIRED_PLAN_SECTIONS = [
+  'Estratégia Técnica',
+  'Detalhamento da Implementação',
+  'Segurança e Conformidade',
+  'Estratégia de Testes',
+  'Rollback e Monitoramento',
+];
+
+// Arquivos de configuração versionados gerados pelo `init` em .github/config/.
+// O tech_context.yml (RFC-002 §4) é a fonte de verdade estática que o
+// generate-plan lê para embasar o plano técnico. O scaffold em setup/files.mjs
+// só cria o arquivo se ainda não existir, para não sobrescrever ajustes manuais.
+export const CONFIG_FILES = [
+  'tech_context.yml',
 ];

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { upsertFile, isRepoInitialized } from '../api/github-rest.mjs';
+import { upsertFile, getFileContent, isRepoInitialized } from '../api/github-rest.mjs';
 
 const __dir = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = path.join(__dir, '..', 'templates');
@@ -58,6 +58,26 @@ export async function setupFiles(token, owner, repo, spinner) {
   for (let i = 0; i < filesToCreate.length; i++) {
     const file = filesToCreate[i];
     spinner.message(`Criando arquivo ${i + 1}/${filesToCreate.length}: ${file.path}`);
+    await upsertFile(token, owner, repo, file.path, file.content, file.message);
+  }
+
+  // Arquivos de config criados apenas se ainda não existirem, para não
+  // sobrescrever ajustes manuais (tech_context.yml é editado pelo time).
+  const configFiles = [
+    {
+      path: '.github/config/tech_context.yml',
+      content: readTemplate('config', 'tech_context.yml'),
+      message: 'chore: scaffold tech_context.yml [spec-wave]',
+    },
+  ];
+
+  for (const file of configFiles) {
+    const existing = await getFileContent(token, owner, repo, file.path);
+    if (existing !== null) {
+      spinner.message(`Mantendo ${file.path} existente (não sobrescrito)`);
+      continue;
+    }
+    spinner.message(`Criando arquivo de config: ${file.path}`);
     await upsertFile(token, owner, repo, file.path, file.content, file.message);
   }
 }

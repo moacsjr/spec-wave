@@ -23,17 +23,40 @@ function resolveAi() {
   return { provider: meta.value, model, secret: meta.secret };
 }
 
-export async function generateDocument(systemPrompt, userContent) {
+// temperature padrão 0.2 (RFC-002 §5): "Determinism over Creativity". Pode ser
+// sobrescrita por chamada via opts, mas o default cobre spec/plan/decompose.
+export async function generateDocument(systemPrompt, userContent, opts = {}) {
   const ai = resolveAi();
-  console.log(`Provider de IA: ${ai.provider} · modelo: ${ai.model}`);
+  const temperature = opts.temperature ?? 0.2;
+  // Modelos de reasoning (ex.: deepseek-r1) consomem tokens "pensando" antes da
+  // resposta, então o teto precisa ser maior para o plano não vir truncado.
+  const maxTokens = opts.maxTokens ?? 8192;
+  console.log(`Provider de IA: ${ai.provider} · modelo: ${ai.model} · temperature: ${temperature} · max_tokens: ${maxTokens}`);
 
-  if (ai.provider === 'openrouter') {
-    return generateWithOpenRouter(systemPrompt, userContent, ai);
-  }
-  return generateWithAnthropic(systemPrompt, userContent, ai);
+  const raw = ai.provider === 'openrouter'
+    ? await generateWithOpenRouter(systemPrompt, userContent, ai, temperature, maxTokens)
+    : await generateWithAnthropic(systemPrompt, userContent, ai, temperature, maxTokens);
+
+  return stripOuterFence(raw);
 }
 
-async function generateWithAnthropic(systemPrompt, userContent, ai) {
+// Remove blocos de raciocínio que alguns modelos (ex.: deepseek-r1) embutem no
+// content. A OpenRouter normalmente separa em `reasoning`, mas isto é uma rede
+// de segurança caso o <think> venha junto do conteúdo final.
+function stripReasoning(text) {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+// Alguns modelos (ex.: deepseek-r1) envolvem o documento inteiro numa fence
+// ```markdown ... ```. Removemos só o wrapper externo (a primeira e a última
+// linha de cerca), preservando fences internas (gherkin, typescript, etc.).
+function stripOuterFence(text) {
+  const t = (text || '').trim();
+  const m = t.match(/^```[a-zA-Z]*\n([\s\S]*)\n```$/);
+  return m ? m[1].trim() : t;
+}
+
+async function generateWithAnthropic(systemPrompt, userContent, ai, temperature, maxTokens) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -45,7 +68,8 @@ async function generateWithAnthropic(systemPrompt, userContent, ai) {
   const client = new Anthropic({ apiKey });
   const message = await client.messages.create({
     model: ai.model,
-    max_tokens: 4096,
+    max_tokens: maxTokens,
+    temperature,
     messages: [{ role: 'user', content: userContent }],
     system: systemPrompt,
   });
@@ -53,7 +77,7 @@ async function generateWithAnthropic(systemPrompt, userContent, ai) {
   return message.content[0].text;
 }
 
-async function generateWithOpenRouter(systemPrompt, userContent, ai) {
+async function generateWithOpenRouter(systemPrompt, userContent, ai, temperature, maxTokens) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -72,7 +96,8 @@ async function generateWithOpenRouter(systemPrompt, userContent, ai) {
     },
     body: JSON.stringify({
       model: ai.model,
-      max_tokens: 4096,
+      max_tokens: maxTokens,
+      temperature,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent },
@@ -86,7 +111,7 @@ async function generateWithOpenRouter(systemPrompt, userContent, ai) {
   }
 
   const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content;
+  const content = stripReasoning(data?.choices?.[0]?.message?.content || '');
   if (!content) {
     throw new Error(`OpenRouter retornou resposta vazia: ${JSON.stringify(data)}`);
   }

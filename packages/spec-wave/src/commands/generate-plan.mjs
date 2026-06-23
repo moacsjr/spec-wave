@@ -4,22 +4,26 @@ import { resolveToken } from '../api/auth.mjs';
 import { getIssue, removeLabel, commentOnIssue } from '../api/github-rest.mjs';
 import { generateDocument } from '../lib/claude.mjs';
 import { slugify } from '../lib/slugify.mjs';
+import { buildTechContext } from '../lib/tech-context.mjs';
 
-const SYSTEM_PROMPT = `Você é um Tech Lead experiente. Gere um plano técnico (plan.md) completo e detalhado para a Feature descrita pelo usuário.
+const SYSTEM_PROMPT = `Você é um Tech Lead experiente. Gere um plano técnico (plan.md) completo e detalhado, baseado ESTRITAMENTE no spec.md fornecido.
 
-O plano deve conter exatamente estas seções em português:
-# Frontend
-# Backend
-# Banco de dados
-# Infraestrutura
-# Segurança
-# Testes
-# Estimativa (Story Points)
+O plano deve conter EXATAMENTE estas seções em português, nesta ordem:
+# Estratégia Técnica
+  - Abordagem Arquitetural, Decisões-Chave e uma Matriz de Rastreabilidade (tabela) ligando cada Critério de Aceite do spec a um componente técnico.
+# Detalhamento da Implementação
+  - Subseções: ## Backend, ## Banco de Dados, ## Frontend, ## Infraestrutura.
+# Segurança e Conformidade
+# Estratégia de Testes
+  - Unitários, Integração e E2E.
+# Rollback e Monitoramento
+  - Plano de Rollback, Métricas Observadas e Alertas.
 
-Para cada seção, forneça detalhes técnicos concretos e acionáveis baseados na descrição da Feature.
-Use a especificação funcional (spec.md) fornecida para embasar as decisões técnicas, quando disponível.
-A estimativa de Story Points deve usar a sequência de Fibonacci: 1, 2, 3, 5, 8, 13, 21.
-Responda APENAS com o conteúdo do plan.md, sem texto adicional.`;
+Regras OBRIGATÓRIAS:
+- TODA mudança de banco, endpoint de API ou componente de UI DEVE referenciar um Critério de Aceite específico do spec.md (rastreabilidade).
+- Use APENAS as tecnologias e serviços listados no tech_context fornecido. Não invente APIs ou serviços inexistentes.
+- Forneça detalhes acionáveis: caminhos exatos de endpoints, nomes de DTOs, constraints de banco.
+- Responda APENAS com o conteúdo do plan.md, sem texto adicional.`;
 
 export async function generatePlan({ issueNumber }) {
   const token = await resolveToken();
@@ -43,11 +47,21 @@ export async function generatePlan({ issueNumber }) {
   const specPath = `${featureDir}/spec.md`;
   const specContent = existsSync(specPath) ? readFileSync(specPath, 'utf-8') : null;
 
-  const userContent = [
-    `Feature: ${issue.title}`,
-    `\nDescrição:\n${issue.body || '(sem descrição)'}`,
-    specContent ? `\nEspecificação Funcional (spec.md):\n${specContent}` : '',
-  ].join('');
+  // Tech context (RFC-002 §4): estático + dinâmico + override do corpo da issue.
+  const tech = buildTechContext({ issueBody: issue.body || '' });
+
+  // Payload estruturado (RFC-002 §5.2): spec_content + tech_context.
+  const payload = {
+    spec_content: specContent || '(spec.md ainda não gerado — baseie-se na descrição da Feature)',
+    feature_title: issue.title,
+    feature_description: issue.body || '(sem descrição)',
+    tech_context: {
+      static: tech.merged,
+      dynamic: tech.dynamic,
+      overrides: tech.overrides,
+    },
+  };
+  const userContent = `Gere o plan.md a partir deste payload JSON:\n\n${JSON.stringify(payload, null, 2)}`;
 
   console.log(`Gerando plan.md para: ${issue.title}`);
   const content = await generateDocument(SYSTEM_PROMPT, userContent);
