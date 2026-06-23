@@ -177,8 +177,9 @@ Configura o spec-wave no repositório. Você dirige o `init` com flags — **nun
    npx spec-wave init --repo <owner/repo> --project-title "<título>"
    ```
    Use `--skip-project` / `--skip-labels` / `--skip-files` **apenas** para re-rodar uma fase específica que falhou antes.
-7. O `init` cria o Project, as labels, os workflows e grava `.spec-wave.json`. Oriente o usuário a fazer `git pull` para trazer o arquivo ao checkout local.
-8. Instrua o usuário a adicionar `ANTHROPIC_API_KEY` como secret no repositório (Settings → Secrets → Actions).
+7. O `init` cria o Project, as labels, os workflows, um **scaffold de `.github/config/tech_context.yml`** (só se ainda não existir) e grava `.spec-wave.json`. Oriente o usuário a fazer `git pull` para trazer os arquivos ao checkout local.
+8. **Adapte o `tech_context.yml`**: o scaffold vem com dados de exemplo. Ofereça ajustá-lo à stack real do repo seguindo a seção **Tech Context** (perto do comando `/spec-wave plan`) — isso melhora muito a qualidade do `plan.md`.
+9. Instrua o usuário a adicionar a chave de IA como secret no repositório (Settings → Secrets → Actions): `ANTHROPIC_API_KEY` (Anthropic) ou `OPENROUTER_API_KEY` (OpenRouter), conforme o provider escolhido no `init`.
 
 ---
 
@@ -242,14 +243,70 @@ O plano técnico segue o schema do RFC-002 §3.2: **Estratégia Técnica** (com 
 
 **Passos:**
 1. Verifique se `spec.md` já existe em `docs/features/<slug>/` (o plano usa a especificação funcional como contexto). Se não existir, gere a spec primeiro com `/spec-wave spec <número>`.
-2. (Opcional) Confirme que `.github/config/tech_context.yml` reflete a stack atual do repo — o `init` gera um scaffold que deve ser ajustado pelo time.
+2. **Garanta o `tech_context`** (a qualidade do plano depende disso). Verifique se `.github/config/tech_context.yml` existe no repo (use Read). **Se não existir, ajude a criar AGORA** seguindo a seção **Tech Context** abaixo (logo após este comando) — e garanta que esteja **commitado e pushado** antes de adicionar a label (o Action lê o arquivo do repositório, não do seu disco local).
 3. Adicione a label de gatilho:
    ```bash
    gh issue edit <número> --add-label "spec-wave:plan"
    ```
-3. Informe: "Label `spec-wave:plan` adicionada. O GitHub Action `generate-plan.yml` irá gerar o `plan.md` automaticamente. Acompanhe em: Actions → Generate Plan."
-4. Após a conclusão (cheque comentários na issue ou aguarde confirmação do usuário), ofereça revisar o plan.md gerado em `docs/features/<slug>/plan.md`.
-5. Próximo passo: validar a Feature — mova para **✅ Ready** e use `/spec-wave ready <número>`.
+4. Informe: "Label `spec-wave:plan` adicionada. O GitHub Action `generate-plan.yml` irá gerar o `plan.md` automaticamente. Acompanhe em: Actions → Generate Plan."
+5. Após a conclusão (cheque comentários na issue ou aguarde confirmação do usuário), ofereça revisar o plan.md gerado em `docs/features/<slug>/plan.md`.
+6. Próximo passo: validar a Feature — mova para **✅ Ready** e use `/spec-wave ready <número>`.
+
+---
+
+### Tech Context (`.github/config/tech_context.yml`)
+
+Fonte de verdade estática da stack do sistema (RFC-002 §4). O `generate-plan` lê este arquivo para embasar o plano técnico e usar **APENAS** as tecnologias/serviços nele declarados — sem ele, o plano fica genérico e pode inventar APIs inexistentes. O `npx spec-wave init` gera um **scaffold de exemplo** que **deve ser adaptado** à stack real. Use este fluxo quando o arquivo estiver ausente ou desatualizado.
+
+**Como ajudar a criar (quando não existir):**
+
+1. **Confirme a ausência:** tente `Read .github/config/tech_context.yml`. Se já existir, apenas confirme com o usuário se reflete a stack atual e pule para o fim.
+2. **Detecte a stack** lendo os arquivos do repositório (use Read; não invente):
+   - `package.json` → backend/frontend e libs (ex.: `@nestjs/core`, `next`, `react`, `@prisma/client`, `express`).
+   - `pom.xml` / `build.gradle` (Java), `requirements.txt` / `pyproject.toml` (Python), `go.mod` (Go).
+   - `prisma/schema.prisma` ou pasta `migrations/` → tabelas e colunas para `database_schemas`.
+   - `Dockerfile` / `docker-compose.yml` / charts Helm → `infra`.
+   - Procure papéis/roles (enum de RBAC) no código para `security.rbac_roles`.
+3. **Rascunhe** o YAML seguindo EXATAMENTE este schema (preencha só o que conseguir confirmar; deixe `# TODO` no que faltar — não invente):
+   ```yaml
+   system_info:
+     name: "<nome do sistema>"
+     stack:
+       backend: "<ex.: Node.js (NestJS v11)>"
+       frontend: "<ex.: Next.js 16 (React 19)>"
+       database: "<ex.: PostgreSQL (Prisma 5)>"
+       infra: "<ex.: Docker / Kubernetes>"
+     architecture: "<ex.: Monorepo Nx / Microservices>"
+   security:
+     auth_protocol: "<ex.: JWT>"
+     rbac_roles: ["ADMIN", "..."]
+   database_schemas:
+     - table: "<tabela>"
+       columns: "<col1, col2, ...>"
+   existing_services:
+     - name: "<serviço>"
+       endpoint: "<caminho>"
+       auth: "<ex.: JWT, mTLS>"
+   internal_libraries:
+     - "<lib interna>"
+   ```
+4. **Mostre o rascunho ao usuário e peça confirmação/ajustes** antes de gravar (ele conhece serviços internos e roles que o código pode não revelar).
+5. **Grave** com Write em `.github/config/tech_context.yml`.
+6. **Oriente a commitar e pushar** antes de seguir (o Action lê do repo). Sugira ao usuário rodar, via prefixo `!`:
+   ```bash
+   !git add .github/config/tech_context.yml && git commit -m "chore: tech_context.yml [spec-wave]" && git push
+   ```
+
+**Desvios pontuais:** para uma Feature específica usar algo fora do padrão (ex.: "usar DynamoDB só aqui"), oriente a adicionar uma seção `## Tech Override` no corpo da issue, com um bloco YAML que será mesclado (deep-merge) sobre o `tech_context.yml`:
+
+````markdown
+## Tech Override
+```yaml
+system_info:
+  stack:
+    database: "DynamoDB"
+```
+````
 
 ---
 
