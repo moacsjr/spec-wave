@@ -75,6 +75,7 @@ export async function generatePlan({ issueNumber }) {
   git(`git config user.name "spec-wave[bot]"`);
   git(`git add "${filePath}"`);
   git(`git commit -m "docs: generate plan.md for ${slug} [spec-wave]"`);
+  git('git pull --rebase');
   git('git push');
 
   // Remove trigger label

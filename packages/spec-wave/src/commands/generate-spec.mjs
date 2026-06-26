@@ -68,6 +68,7 @@ export async function generateSpec({ issueNumber }) {
   git(`git config user.name "spec-wave[bot]"`);
   git(`git add "${filePath}"`);
   git(`git commit -m "docs: generate spec.md for ${slug} [spec-wave]"`);
+  git('git pull --rebase');
   git('git push');
 
   // Remove trigger label
