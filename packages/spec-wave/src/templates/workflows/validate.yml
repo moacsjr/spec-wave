@@ -12,13 +12,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Validate spec and plan
         run: npx @spec-wave/cli validate --issue-number ${{ github.event.issue.number }}

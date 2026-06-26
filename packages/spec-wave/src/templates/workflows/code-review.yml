@@ -17,7 +17,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Move Feature to Code Review
         run: npx @spec-wave/cli code-review --pr-number ${{ github.event.pull_request.number }}
