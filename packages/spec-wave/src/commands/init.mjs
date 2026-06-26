@@ -8,7 +8,7 @@ import { runWizard } from '../ui/wizard.mjs';
 import { setupProject } from '../setup/project.mjs';
 import { setupLabels } from '../setup/labels.mjs';
 import { setupFiles } from '../setup/files.mjs';
-import { upsertFile } from '../api/github-rest.mjs';
+import { upsertFile, getFileContent } from '../api/github-rest.mjs';
 import { CONFIG_FILE, AI_PROVIDERS, getProvider, DEFAULT_PROVIDER } from '../config.mjs';
 
 const __dir = path.dirname(fileURLToPath(import.meta.url));
@@ -90,6 +90,22 @@ export async function init(options) {
   let projectUrl, projectId, projectNumber, projectFields;
   if (options.skipProject) {
     p.log.info('Pulando criação do GitHub Project (--skip-project).');
+    // Preserva o bloco project do .spec-wave.json existente (se houver).
+    try {
+      const raw = await getFileContent(token, owner, repo, CONFIG_FILE);
+      if (raw) {
+        const existing = JSON.parse(raw);
+        if (existing.project) {
+          projectUrl = existing.project.url ?? undefined;
+          projectId = existing.project.id ?? undefined;
+          projectNumber = existing.project.number ?? undefined;
+          projectFields = existing.project.fields ?? undefined;
+          p.log.info('Dados do Project preservados do config existente.');
+        }
+      }
+    } catch {
+      // Sem config existente — mantém undefined (será gravado como null).
+    }
   } else {
     const projectSpinner = p.spinner();
     projectSpinner.start('Criando GitHub Project...');

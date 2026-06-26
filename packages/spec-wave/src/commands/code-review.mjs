@@ -69,13 +69,17 @@ async function setCodeReview(token, project, etapaField, statusField, nodeId) {
 
 export async function codeReview({ prNumber }) {
   const token = await resolveToken();
-  const [owner, repo] = (process.env.GITHUB_REPOSITORY || '').split('/');
+  const [envOwner, envRepo] = (process.env.GITHUB_REPOSITORY || '').split('/');
+  const cfgPath = path.join(process.cwd(), CONFIG_FILE);
+  let cfg = {};
+  try { if (existsSync(cfgPath)) cfg = JSON.parse(readFileSync(cfgPath, 'utf-8')); } catch {}
+  const owner = envOwner || cfg.owner;
+  const repo = envRepo || cfg.repo;
 
   if (!owner || !repo) {
     throw new Error(
-      'GITHUB_REPOSITORY env var não definida.\n' +
-      'Este comando roda no GitHub Actions. Para testar localmente:\n' +
-      `  GITHUB_REPOSITORY=owner/repo spec-wave code-review --pr-number ${prNumber}`
+      'Não foi possível determinar owner/repo.\n' +
+      'Defina GITHUB_REPOSITORY=owner/repo ou rode dentro de um repositório com .spec-wave.json.'
     );
   }
 
