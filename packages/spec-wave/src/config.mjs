@@ -53,6 +53,7 @@ export const CUSTOM_FIELDS = [
     name: 'Work Item Type',
     dataType: 'SINGLE_SELECT',
     options: [
+      { name: 'Initiative', color: 'PINK', description: 'Agrupamento estratégico de Epics' },
       { name: 'Epic',    color: 'PURPLE', description: 'Objetivo estratégico' },
       { name: 'Feature', color: 'BLUE',   description: 'Capacidade funcional' },
       { name: 'Story',   color: 'GREEN',  description: 'Necessidade do usuário' },
@@ -110,6 +111,7 @@ export const WORK_ITEM_TYPES = CUSTOM_FIELDS
   .options.map(o => o.name);
 
 export const TYPE_LABELS = [
+  { name: '[INITIATIVE]', color: 'C5DEF5', description: 'Agrupamento estratégico de Epics' },
   { name: '[EPIC]',    color: '7B61FF', description: 'Objetivo estratégico'  },
   { name: '[FEATURE]', color: '0075CA', description: 'Capacidade funcional'  },
   { name: '[STORY]',   color: '0E8A16', description: 'Necessidade do usuário' },
@@ -140,6 +142,8 @@ export const WORKFLOW_FILES = [
   'generate-spec.yml',
   'validate.yml',
   'decompose.yml',
+  'code-review.yml',
+  'qa.yml',
 ];
 
 export const ISSUE_TEMPLATE_FILES = [

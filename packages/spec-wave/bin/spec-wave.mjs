@@ -49,9 +49,9 @@ program
 
 program
   .command('issue')
-  .description('Cria um work item (epic/feature/story/task...), opcionalmente como sub-issue, e adiciona ao board')
+  .description('Cria um work item (initiative/epic/feature/story/task...), opcionalmente como sub-issue, e adiciona ao board')
   .requiredOption('--title <title>', 'Título (sem o prefixo de tipo, ex.: [FEATURE])')
-  .option('--type <type>', 'Tipo: epic, feature, story, task, bug, spike ou rfc', 'feature')
+  .option('--type <type>', 'Tipo: initiative, epic, feature, story, task, bug, spike ou rfc', 'feature')
   .option('--parent <n>', 'Número da issue pai (cria como sub-issue dela)')
   .option('--body <text>', 'Descrição')
   .option('--priority <p>', 'Prioridade: P0, P1, P2 ou P3')
@@ -59,6 +59,18 @@ program
   .action(async (options) => {
     const { issue } = await import('../src/commands/issue.mjs');
     await issue(options).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
+  .command('initiative')
+  .description('Atalho de `issue --type initiative` (nó raiz que agrupa Epics)')
+  .requiredOption('--title <title>', 'Título da initiative (sem o prefixo [INITIATIVE])')
+  .option('--body <text>', 'Descrição da initiative')
+  .option('--priority <p>', 'Prioridade: P0, P1, P2 ou P3 (adiciona label)')
+  .option('--area <area>', 'Área: Frontend, Backend, Mobile, Infra, DevOps ou Data')
+  .action(async (options) => {
+    const { initiative } = await import('../src/commands/initiative.mjs');
+    await initiative(options).catch(err => { console.error(err.message); process.exit(1); });
   });
 
 program
@@ -122,6 +134,24 @@ program
   .action(async (options) => {
     const { decompose } = await import('../src/commands/decompose.mjs');
     await decompose(options).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
+  .command('code-review')
+  .description('Move Feature para Code Review ao abrir um PR (usado pelo GitHub Action)')
+  .requiredOption('--pr-number <n>', 'Número do Pull Request')
+  .action(async (options) => {
+    const { codeReview } = await import('../src/commands/code-review.mjs');
+    await codeReview(options).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
+  .command('qa')
+  .description('Move Feature para QA ao aprovar um PR (usado pelo GitHub Action)')
+  .requiredOption('--pr-number <n>', 'Número do Pull Request')
+  .action(async (options) => {
+    const { qa } = await import('../src/commands/qa.mjs');
+    await qa(options).catch(err => { console.error(err.message); process.exit(1); });
   });
 
 program

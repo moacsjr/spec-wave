@@ -1,9 +1,39 @@
 import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { resolveToken } from '../api/auth.mjs';
 import { getIssue, createIssue, removeLabel, commentOnIssue } from '../api/github-rest.mjs';
-import { addSubIssue } from '../api/github-graphql.mjs';
+import { addSubIssue, addProjectItem, setItemSingleSelect, getSingleSelectField } from '../api/github-graphql.mjs';
 import { generateDocument } from '../lib/claude.mjs';
 import { slugify } from '../lib/slugify.mjs';
+import { CONFIG_FILE } from '../config.mjs';
+
+const READY_STAGE = 'Todo';
+
+// Carrega o projeto do .spec-wave.json. Retorna null se ausente ou sem project.id.
+function loadProject() {
+  const configPath = path.join(process.cwd(), CONFIG_FILE);
+  if (!existsSync(configPath)) return null;
+  try {
+    return JSON.parse(readFileSync(configPath, 'utf-8')).project || null;
+  } catch {
+    return null;
+  }
+}
+
+// Resolve o campo Status do Project: usa .spec-wave.json ou consulta API.
+async function resolveStatusField(token, project) {
+  if (project.fields?.Status) return project.fields.Status;
+  return await getSingleSelectField(token, project.id, 'Status');
+}
+
+// Adiciona issue ao board e move para a etapa informada. Best-effort.
+async function moveToStage(token, project, statusField, nodeId, stageName) {
+  if (!project?.id || !statusField) return;
+  const optionId = statusField.options?.[stageName];
+  if (!statusField.id || !optionId) return;
+  const itemId = await addProjectItem(token, project.id, nodeId);
+  await setItemSingleSelect(token, project.id, itemId, statusField.id, optionId);
+}
 
 const SYSTEM_PROMPT = `Você é um Tech Lead experiente em decomposição de trabalho ágil.
 A partir da Feature fornecida (com spec.md e plan.md), gere uma lista de Stories e Tasks.
@@ -47,6 +77,17 @@ export async function decompose({ issueNumber }) {
 
   const issue = await getIssue(token, owner, repo, parseInt(issueNumber, 10));
   const slug = slugify(issue.title);
+
+  // Carrega projeto e resolve campo Status uma vez (reutilizado em todos os itens).
+  const project = loadProject();
+  let statusField = null;
+  if (project?.id && READY_STAGE) {
+    try {
+      statusField = await resolveStatusField(token, project);
+    } catch (err) {
+      console.warn(`Não foi possível resolver campo Status do board: ${err.message}`);
+    }
+  }
   const featureDir = `docs/features/${slug}`;
 
   const planContent = existsSync(`${featureDir}/plan.md`)
@@ -101,6 +142,13 @@ export async function decompose({ issueNumber }) {
       console.warn(`  Story #${createdStory.number} criada, mas falhou ao vincular à Feature: ${err.message}`);
     }
 
+    // Move story para Ready no board.
+    try {
+      await moveToStage(token, project, statusField, createdStory.nodeId, READY_STAGE);
+    } catch (err) {
+      console.warn(`  Falha ao mover story #${createdStory.number} para "${READY_STAGE}": ${err.message}`);
+    }
+
     for (const task of story.tasks || []) {
       console.log(`  Criando task: ${task.title}`);
       const taskTitle = `[TASK] ${task.title}`;
@@ -113,7 +161,22 @@ export async function decompose({ issueNumber }) {
       } catch (err) {
         console.warn(`    Task #${createdTask.number} criada, mas falhou ao vincular à Story: ${err.message}`);
       }
+
+      // Move task para Ready no board.
+      try {
+        await moveToStage(token, project, statusField, createdTask.nodeId, READY_STAGE);
+      } catch (err) {
+        console.warn(`    Falha ao mover task #${createdTask.number} para "${READY_STAGE}": ${err.message}`);
+      }
     }
+  }
+
+  // Move a própria Feature para Ready no board.
+  try {
+    await moveToStage(token, project, statusField, featureNodeId, READY_STAGE);
+    if (project?.id && statusField) console.log(`Feature movida para "${READY_STAGE}" no board.`);
+  } catch (err) {
+    console.warn(`Falha ao mover Feature para "${READY_STAGE}": ${err.message}`);
   }
 
   // Remove trigger label

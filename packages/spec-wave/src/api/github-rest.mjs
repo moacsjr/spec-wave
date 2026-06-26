@@ -145,6 +145,12 @@ export async function isRepoInitialized(token, owner, repo) {
   }
 }
 
+export async function getPR(token, owner, repo, prNumber) {
+  const octokit = makeOctokit(token);
+  const res = await octokit.rest.pulls.get({ owner, repo, pull_number: prNumber });
+  return res.data;
+}
+
 export async function getFileContent(token, owner, repo, path) {
   const octokit = makeOctokit(token);
   try {
