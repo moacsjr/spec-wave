@@ -1,0 +1,28 @@
+{
+  "name": "@spec-wave/cli",
+  "version": "0.5.0",
+  "description": "Setup spec-driven GitHub workflow with Projects v2, labels, issue templates, and AI-powered Actions",
+  "type": "module",
+  "bin": {
+    "spec-wave": "./bin/spec-wave.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.3",
+    "@clack/prompts": "^0.9.1",
+    "@octokit/graphql": "^9.0.1",
+    "@octokit/rest": "^22.0.0",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "js-yaml": "^4.1.0"
+  }
+}

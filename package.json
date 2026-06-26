@@ -1,6 +1,7 @@
 {
-  "name": "spec-flow-workspace",
+  "name": "spec-wave-workspace",
   "private": true,
+  "version": "0.1.0",
   "workspaces": [
     "packages/*"
   ]
