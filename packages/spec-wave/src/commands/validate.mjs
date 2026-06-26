@@ -52,13 +52,17 @@ async function moveToDone(token, issue) {
 
 export async function validate({ issueNumber }) {
   const token = await resolveToken();
-  const [owner, repo] = (process.env.GITHUB_REPOSITORY || '').split('/');
+  const [envOwner, envRepo] = (process.env.GITHUB_REPOSITORY || '').split('/');
+  const configPath = path.join(process.cwd(), CONFIG_FILE);
+  let cfg = {};
+  try { if (existsSync(configPath)) cfg = JSON.parse(readFileSync(configPath, 'utf-8')); } catch {}
+  const owner = envOwner || cfg.owner;
+  const repo = envRepo || cfg.repo;
 
   if (!owner || !repo) {
     throw new Error(
-      'GITHUB_REPOSITORY env var não definida.\n' +
-      'Este comando roda no GitHub Actions. Para testar localmente:\n' +
-      '  GITHUB_REPOSITORY=owner/repo spec-wave validate --issue-number 1'
+      'Não foi possível determinar owner/repo.\n' +
+      'Defina GITHUB_REPOSITORY=owner/repo ou rode o comando dentro de um repositório com .spec-wave.json.'
     );
   }
 
