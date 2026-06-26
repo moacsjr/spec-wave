@@ -248,7 +248,7 @@ The agent must configure the GitHub Project with specific fields and automate tr
 ### 6.1. Custom Fields
 | Field Name | Type | Options | Required |
 |------------|------|---------|----------|
-| Work Item Type | Single select | Epic, Feature, Story, Task, Bug, Spike, RFC | Yes |
+| Work Item Type | Single select | Initiative, Epic, Feature, Story, Task, Bug, Spike, RFC | Yes |
 | Priority | Single select | P0, P1, P2, P3 | Yes |
 | Story Points | Number | 1, 2, 3, 5, 8, 13 | For Stories |
 | Area | Single select | Frontend, Backend, Mobile, Infra, Data | Yes |

@@ -94,13 +94,16 @@ Esta skill é um **wrapper** da CLI `spec-wave`. Regra de ouro: **nunca rode um 
 | Flag | Tipo | Descrição |
 |------|------|-----------|
 | `--title <title>` | string (obrigatório) | Título, **sem** o prefixo de tipo (a CLI adiciona, ex.: `[STORY]`). |
-| `--type <type>` | string | `epic`, `feature`, `story`, `task`, `bug`, `spike` ou `rfc`. Default: `feature`. |
+| `--type <type>` | string | `initiative`, `epic`, `feature`, `story`, `task`, `bug`, `spike` ou `rfc`. Default: `feature`. |
 | `--parent <n>` | string | Número da issue pai — cria como **sub-issue** dela (relação nativa do GitHub). |
 | `--body <text>` | string | Descrição. |
 | `--priority <p>` | string | `P0`, `P1`, `P2` ou `P3`. |
 | `--area <area>` | string | `Frontend`, `Backend`, `Mobile`, `Infra`, `DevOps` ou `Data`. |
 
 > Faz tudo: cria a issue (label de tipo + prioridade), vincula ao parent como sub-issue, adiciona ao Project e define os campos **Etapa = 📥 Backlog**, **Work Item Type**, **Priority** e **Area**. Grava `Parent: #N` no corpo. Lê o Project do `.spec-wave.json`. **Não use `gh issue create` direto** — ele não adiciona ao board nem vincula o parent.
+
+### `spec-wave initiative` — atalho de `issue --type initiative`
+Cria o nó raiz da hierarquia (agrupa Epics). Mesmas flags do `issue` exceto `--type` (fixo em `initiative`) e `--parent` (Initiative é raiz, não tem pai).
 
 ### `spec-wave feature` — atalho de `issue --type feature`
 Mesmas flags do `issue` (exceto `--type`, fixo em `feature`). Mantido para o fluxo do RFC-001.
@@ -183,14 +186,14 @@ Configura o spec-wave no repositório. Você dirige o `init` com flags — **nun
 
 ---
 
-### `/spec-wave issue <tipo> <descrição>` · `/spec-wave feature <descrição>`
+### `/spec-wave issue <tipo> <descrição>` · `/spec-wave initiative <descrição>` · `/spec-wave feature <descrição>`
 
-Crie um work item tipado (Epic/Feature/Story/Task/...) já adicionado ao board em **📥 Backlog**, opcionalmente como sub-issue de um parent.
+Crie um work item tipado (Initiative/Epic/Feature/Story/Task/...) já adicionado ao board em **📥 Backlog**, opcionalmente como sub-issue de um parent.
 
-**Hierarquia típica:** Epic → Feature → Story → Task. Use `--parent <n>` para criar como sub-issue do nível acima (ex.: uma Story filha de uma Feature). O GitHub mostra o parent na issue filha e vice-versa; a CLI ainda grava `Parent: #N` no corpo.
+**Hierarquia típica:** Initiative → Epic → Feature → Story → Task. A **Initiative** é o nó raiz e agrupa Epics. Use `--parent <n>` para criar como sub-issue do nível acima (ex.: um Epic filho de uma Initiative, ou uma Story filha de uma Feature). O GitHub mostra o parent na issue filha e vice-versa; a CLI ainda grava `Parent: #N` no corpo.
 
 **Passos:**
-1. Pergunte ao usuário: tipo (epic/feature/story/task/...), título (sem prefixo), descrição, área, prioridade, e se há uma issue **pai** (número).
+1. Pergunte ao usuário: tipo (initiative/epic/feature/story/task/...), título (sem prefixo), descrição, área, prioridade, e se há uma issue **pai** (número).
 2. Execute o comando com os parâmetros coletados:
    ```bash
    npx spec-wave issue \

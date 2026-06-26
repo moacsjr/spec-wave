@@ -50,10 +50,11 @@ antes de entrar em desenvolvimento.
 Todo trabalho deve possuir relação hierárquica.
 
 ```text
-Epic
- └── Feature
-      └── Story
-           └── Task
+Initiative
+ └── Epic
+      └── Feature
+           └── Story
+                └── Task
 ```
 
 ---
@@ -76,9 +77,25 @@ A responsabilidade final permanece humana.
 
 # 3. Estrutura Hierárquica
 
+## Initiative
+
+Nó raiz da hierarquia. Agrupa Epics relacionados sob um tema estratégico maior.
+
+Exemplos:
+
+```text
+[INITIATIVE] Plataforma 2026
+
+[INITIATIVE] Expansão Marketplace
+
+[INITIATIVE] Excelência Operacional
+```
+
+---
+
 ## Epic
 
-Representa um objetivo estratégico ou iniciativa de negócio.
+Representa um objetivo estratégico de negócio. Pertence a uma Initiative.
 
 Exemplos:
 
@@ -664,6 +681,7 @@ Responsáveis por:
 ## Work Item Type
 
 ```text
+Initiative
 Epic
 Feature
 Story
@@ -765,17 +783,23 @@ Toda Feature deve pertencer a um Epic.
 
 ## Regra 5
 
-Toda Task deve pertencer a uma Story.
+Todo Epic deve pertencer a uma Initiative.
 
 ---
 
 ## Regra 6
 
-Todo código deve passar por Code Review.
+Toda Task deve pertencer a uma Story.
 
 ---
 
 ## Regra 7
+
+Todo código deve passar por Code Review.
+
+---
+
+## Regra 8
 
 Ao mover uma Feature para Ready, o sistema deve gerar automaticamente:
 
@@ -786,13 +810,13 @@ Ao mover uma Feature para Ready, o sistema deve gerar automaticamente:
 
 ---
 
-## Regra 8
+## Regra 9
 
 Nenhuma Story pode iniciar desenvolvimento sem ter sido gerada a partir de uma Feature aprovada.
 
 ---
 
-## Regra 9
+## Regra 10
 
 A IA pode sugerir trabalho, mas não aprovar trabalho.
 
