@@ -78,7 +78,7 @@ export async function generateSpec({ issueNumber }) {
   await commentOnIssue(
     token, owner, repo, parseInt(issueNumber, 10),
     `📋 **spec.md gerado automaticamente!**\n\n` +
-    `📄 Arquivo: [\`${filePath}\`](${filePath})\n\n` +
+    `📄 Arquivo: [\`${filePath}\`](https://github.com/${owner}/${repo}/blob/main/${filePath})\n\n` +
     `Revise a especificação e, quando estiver pronto, gere o plano técnico: mova o card para **📋 Plan** ou use:\n` +
     `\`\`\`\ngh issue edit ${issueNumber} --add-label "spec-wave:plan"\n\`\`\``
   );
