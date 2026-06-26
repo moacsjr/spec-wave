@@ -122,7 +122,7 @@ export async function init(options) {
     labelSpinner.start('Criando labels...');
     try {
       await setupLabels(token, owner, repo, labelSpinner);
-      labelSpinner.stop('Labels criadas (15 labels)');
+      labelSpinner.stop('Labels criadas (16 labels)');
     } catch (err) {
       labelSpinner.stop('');
       p.log.error(`Erro ao criar labels: ${err.message}`);

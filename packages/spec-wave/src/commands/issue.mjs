@@ -179,8 +179,13 @@ export async function issue(options) {
   }
 
   const parentLine = parent ? ` (sub-issue de #${parent.number})` : '';
+  const hints = {
+    Feature: `Próximo: \`/spec-wave plan ${created.number}\` para o planejamento técnico.`,
+    Initiative: `Próximo: crie Epics sob esta Initiative com \`spec-wave issue --type epic --parent ${created.number} --title "..."\`.`,
+    Epic: `Próximo: crie Features sob este Epic com \`spec-wave feature --parent ${created.number} --title "..."\`.`,
+  };
   p.outro(
     `${chalk.green('✓')} ${type} #${created.number} criado em "${INITIAL_STAGE}"${parentLine}.\n` +
-    `  ${type === 'Feature' ? `Próximo: \`/spec-wave plan ${created.number}\` para o planejamento técnico.` : ''}`
+    `  ${hints[type] || ''}`
   );
 }
