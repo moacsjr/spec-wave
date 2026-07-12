@@ -51,13 +51,22 @@ export const STATUS_OPTIONS = [
   { name: '🎉 Done',            color: 'GREEN'  },
 ];
 
-// Etapas usadas pelo fluxo de implementação (comando `implement`): cada task vai
-// para "In Progress" ao INICIAR seu desenvolvimento e para "Done" ao concluir;
-// ao final da Story, Feature + Story vão para "Code Review" (após commit + PR).
-// Resolvidas por nome para não quebrar se a ordem/cor das opções mudar.
-export const STAGE_IN_PROGRESS = STATUS_OPTIONS.find(s => s.name.includes('Desenvolvimento')).name;
-export const STAGE_DONE = STATUS_OPTIONS.find(s => s.name.includes('Done')).name;
+// ⚠️ Dois campos DISTINTOS no board (não confundir):
+//  • "Etapa" (campo custom = as opções de STATUS_OPTIONS acima): as colunas do
+//    kanban. Determina a DIREÇÃO do fluxo — uma issue só AVANÇA, nunca volta.
+//  • "Status" (campo nativo: Todo/In Progress/Done): o PROGRESSO dentro da etapa
+//    atual. Ao avançar de etapa, o Status reinicia em "Todo".
+
+// Etapas (campo Etapa) referenciadas pelo fluxo de implementação.
+export const STAGE_DEVELOPMENT = STATUS_OPTIONS.find(s => s.name.includes('Desenvolvimento')).name;
 export const STAGE_CODE_REVIEW = STATUS_OPTIONS.find(s => s.name.includes('Code Review')).name;
+// Ordem canônica das etapas — usada para garantir que uma issue só AVANÇA.
+export const STAGE_ORDER = STATUS_OPTIONS.map(s => s.name);
+
+// Valores do campo nativo "Status" (progresso dentro da etapa).
+export const PROGRESS_TODO = 'Todo';
+export const PROGRESS_IN_PROGRESS = 'In Progress';
+export const PROGRESS_DONE = 'Done';
 
 export const CUSTOM_FIELDS = [
   {

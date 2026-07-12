@@ -4,7 +4,10 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import path from 'node:path';
 import { resolveToken } from '../api/auth.mjs';
-import { CONFIG_FILE, STAGE_IN_PROGRESS, STAGE_DONE, STAGE_CODE_REVIEW } from '../config.mjs';
+import {
+  CONFIG_FILE, STAGE_DEVELOPMENT, STAGE_CODE_REVIEW,
+  PROGRESS_TODO, PROGRESS_IN_PROGRESS, PROGRESS_DONE,
+} from '../config.mjs';
 import { getIssue } from '../api/github-rest.mjs';
 import { listSubIssues, getIssueParent } from '../api/github-graphql.mjs';
 import { detectIssueType } from '../lib/issue-type.mjs';
@@ -53,48 +56,57 @@ function buildContext({ type, issue, tasks, feature, spec, plan, specPath, planP
     lines.push(issue.body.trim());
   }
 
-  // Fluxo SEQUENCIAL, uma task por vez: cada task só vai para "In Progress"
-  // quando seu desenvolvimento começa e vai para "Done" ao concluir — nunca
-  // todas as tasks em "In Progress" ao mesmo tempo.
+  // Modelo do board: "Etapa" (coluna do kanban) = DIREÇÃO, só avança; "Status"
+  // (Todo/In Progress/Done) = PROGRESSO dentro da etapa, reinicia a cada avanço.
+  // O desenvolvimento acontece na Etapa 🚧 Desenvolvimento; o progresso por task
+  // é registrado no STATUS. Ao final, a Etapa avança para Code Review.
   lines.push('');
   lines.push('## Instruções de execução (uma task por vez, sequencial)');
   lines.push('');
+  lines.push(
+    'Há **dois campos** no board com papéis diferentes — não os confunda:\n' +
+    `- **Etapa** (Backlog → … → ${STAGE_DEVELOPMENT} → ${STAGE_CODE_REVIEW} → …): a DIREÇÃO no kanban. Uma issue só **avança**, **nunca** volta para uma etapa anterior.\n` +
+    `- **Status** (${PROGRESS_TODO} → ${PROGRESS_IN_PROGRESS} → ${PROGRESS_DONE}): o **progresso dentro da etapa atual**. Ao avançar de etapa, o Status **reinicia em ${PROGRESS_TODO}**.`
+  );
+  lines.push('');
   if (type === 'Story') {
     lines.push(
-      `Implemente as ${tasks.length} task(s) desta Story **uma de cada vez, na ordem listada ` +
-      'abaixo**. É PROIBIDO mover mais de uma task para "In Progress" ao mesmo tempo: uma task ' +
-      'só entra em desenvolvimento depois que a anterior estiver concluída.'
+      `Nesta fase, a Story #${issue.number} e suas Tasks estão na Etapa **${STAGE_DEVELOPMENT}**. ` +
+      'Durante a implementação, mexa **apenas no Status** das Tasks — **não** mude a Etapa delas.'
     );
     lines.push('');
-    lines.push(`1. Ao **iniciar a primeira** task, mova a Story #${issue.number} para **${STAGE_IN_PROGRESS}**.`);
-    lines.push('2. Para **cada task**, na ordem, execute este ciclo completo antes de passar para a próxima:');
-    lines.push(`   1. **Ao começar a task:** mova o status (campo "Etapa") *apenas dessa task* para **${STAGE_IN_PROGRESS}** (In Progress). Nenhuma outra task.`);
-    lines.push('   2. **Implemente** essa task por completo.');
-    lines.push(`   3. **Ao concluir a task:** mova o status *dessa task* para **${STAGE_DONE}** (Done).`);
-    lines.push('   4. Só então avance para a próxima task e repita o ciclo.');
+    lines.push(`1. Garanta que a Story #${issue.number} está na Etapa **${STAGE_DEVELOPMENT}** com Status **${PROGRESS_IN_PROGRESS}**, e que as Tasks estão nessa Etapa com Status **${PROGRESS_TODO}**.`);
+    lines.push(`2. Implemente as ${tasks.length} task(s) **uma de cada vez, na ordem abaixo**. É PROIBIDO ter mais de uma Task com Status **${PROGRESS_IN_PROGRESS}** ao mesmo tempo. Para **cada Task**, na ordem:`);
+    lines.push(`   1. **Ao começar:** Status da Task → **${PROGRESS_IN_PROGRESS}** (a Etapa continua ${STAGE_DEVELOPMENT}).`);
+    lines.push('   2. **Implemente** a Task por completo.');
+    lines.push(`   3. **Ao concluir:** Status da Task → **${PROGRESS_DONE}** (ainda na Etapa ${STAGE_DEVELOPMENT}).`);
+    lines.push('   4. Só então avance para a próxima Task.');
     lines.push('');
-    lines.push(`3. **Ao concluir a implementação de TODA a Story** (todas as tasks em **${STAGE_DONE}**):`);
+    lines.push(`3. **Ao concluir TODA a Story** (todas as Tasks com Status ${PROGRESS_DONE}):`);
     lines.push('   1. Faça o **commit** de todas as mudanças da implementação.');
     lines.push(`   2. Abra o **Pull Request** da Story #${issue.number}.`);
     lines.push(
-      `   3. Mova para **${STAGE_CODE_REVIEW}** — **tudo junto, andando com a Feature**: ` +
-      `${feature ? `a Feature #${feature.number}` : 'a Feature (issue pai da Story)'}, ` +
-      `a Story #${issue.number} e **todas as ${tasks.length} Task(s)** ` +
-      `(${tasks.map(t => `#${t.number}`).join(', ')}). ` +
-      'Feature, Story e Tasks devem ficar na MESMA etapa (Code Review).'
+      `   3. **Avance a Etapa — em conjunto — ${feature ? `da Feature #${feature.number}` : 'da Feature (issue pai da Story)'}, ` +
+      `a Story #${issue.number} e todas as ${tasks.length} Task(s) (${tasks.map(t => `#${t.number}`).join(', ')}) ` +
+      `para ${STAGE_CODE_REVIEW}**, e **reinicie o Status de cada um para ${PROGRESS_TODO}**. ` +
+      'Tudo anda junto com a Feature e sempre para frente.'
     );
   } else {
-    lines.push(`Implemente a Task #${issue.number} bracketando o status no GitHub Project:`);
+    lines.push(
+      `Esta Task #${issue.number} está na Etapa **${STAGE_DEVELOPMENT}**. Acompanhe o progresso pelo ` +
+      '**Status** — **não** mude a Etapa aqui:'
+    );
     lines.push('');
-    lines.push(`1. **Ao começar:** mova o status (campo "Etapa") da Task #${issue.number} para **${STAGE_IN_PROGRESS}** (In Progress).`);
-    lines.push('2. **Implemente** a task por completo.');
-    lines.push(`3. **Ao concluir:** mova o status da Task #${issue.number} para **${STAGE_DONE}** (Done).`);
+    lines.push(`1. **Ao começar:** Status da Task #${issue.number} → **${PROGRESS_IN_PROGRESS}**.`);
+    lines.push('2. **Implemente** a Task por completo.');
+    lines.push(`3. **Ao concluir:** Status da Task #${issue.number} → **${PROGRESS_DONE}**.`);
+    lines.push('');
+    lines.push(`> A Etapa avança para **${STAGE_CODE_REVIEW}** (Status reinicia em ${PROGRESS_TODO}) junto com a Story/Feature quando o PR é aberto — nunca volta para uma etapa anterior.`);
   }
   lines.push('');
   lines.push(
-    `> Mantenha o status coerente com o progresso real: nenhuma task pode ficar em "${STAGE_IN_PROGRESS}" ` +
-    `antes de você começá-la, nem em "${STAGE_DONE}" antes de concluí-la. Atualize o campo "Etapa"/Status ` +
-    'do item no GitHub Project.'
+    `> **Regra do board:** a **Etapa** só avança (nunca retrocede); o **Status** (${PROGRESS_TODO}/${PROGRESS_IN_PROGRESS}/${PROGRESS_DONE}) ` +
+    'só mede o progresso dentro da etapa atual e reinicia a cada avanço de etapa.'
   );
 
   lines.push('');

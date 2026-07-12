@@ -2,13 +2,13 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { resolveToken } from '../api/auth.mjs';
 import { getIssue, getPR, commentOnIssue } from '../api/github-rest.mjs';
-import { addProjectItem, setItemSingleSelect, getSingleSelectField, getIssueParent, listSubIssues } from '../api/github-graphql.mjs';
+import { addProjectItem, setItemSingleSelect, getSingleSelectField, getIssueParent, listSubIssues, getItemSingleSelectValue } from '../api/github-graphql.mjs';
 import { detectIssueType } from '../lib/issue-type.mjs';
-import { CONFIG_FILE, STATUS_OPTIONS } from '../config.mjs';
+import { CONFIG_FILE, STATUS_OPTIONS, STAGE_ORDER, PROGRESS_TODO } from '../config.mjs';
 
 // Campo "Etapa" (custom) → "👀 Code Review". Campo "Status" (nativo) → "Todo".
 const CODE_REVIEW_STAGE = STATUS_OPTIONS.find(s => s.name.includes('Code Review'))?.name;
-const TODO_STATUS = 'Todo';
+const TODO_STATUS = PROGRESS_TODO;
 
 // Extrai números de issues referenciadas no corpo do PR (Closes #N, Fixes #N, #N solto).
 function extractIssueNumbers(body) {
@@ -94,17 +94,29 @@ async function collectReviewUnit(token, owner, repo, issueNumber) {
   return unit;
 }
 
-// Move um item do board para Etapa "👀 Code Review" e Status "Todo".
+// Avança um item do board para a Etapa "👀 Code Review" e reinicia o Status
+// (nativo) para "Todo". Uma issue só AVANÇA: se já estiver em Code Review ou em
+// uma etapa posterior, não é tocada (retorna false). Retorna true se avançou.
 async function setCodeReview(token, project, etapaField, statusField, nodeId) {
   const itemId = await addProjectItem(token, project.id, nodeId);
+
   if (etapaField?.id && CODE_REVIEW_STAGE) {
+    // Nunca retroceder: compara a etapa atual com a de destino na ordem canônica.
+    const current = await getItemSingleSelectValue(token, itemId, etapaField.id).catch(() => null);
+    const curIdx = current ? STAGE_ORDER.indexOf(current) : -1;
+    const tgtIdx = STAGE_ORDER.indexOf(CODE_REVIEW_STAGE);
+    if (curIdx !== -1 && tgtIdx !== -1 && curIdx >= tgtIdx) {
+      return false; // já está em Code Review ou adiante — não retrocede
+    }
     const optionId = etapaField.options?.[CODE_REVIEW_STAGE];
     if (optionId) await setItemSingleSelect(token, project.id, itemId, etapaField.id, optionId);
   }
+  // Ao avançar de etapa, o Status reinicia em "Todo".
   if (statusField?.id) {
     const optionId = statusField.options?.[TODO_STATUS];
     if (optionId) await setItemSingleSelect(token, project.id, itemId, statusField.id, optionId);
   }
+  return true;
 }
 
 export async function codeReview({ prNumber }) {
@@ -165,9 +177,13 @@ export async function codeReview({ prNumber }) {
       if (seen.has(n)) continue;
       seen.add(n);
       try {
-        await setCodeReview(projectToken, project, etapaField, statusField, info.nodeId);
-        updated.push(`#${n} ${info.title}`);
-        console.log(`#${n} → "${CODE_REVIEW_STAGE}" / Status "${TODO_STATUS}".`);
+        const moved = await setCodeReview(projectToken, project, etapaField, statusField, info.nodeId);
+        if (moved) {
+          updated.push(`#${n} ${info.title}`);
+          console.log(`#${n} → "${CODE_REVIEW_STAGE}" / Status "${TODO_STATUS}".`);
+        } else {
+          console.log(`#${n} já está em "${CODE_REVIEW_STAGE}" ou etapa posterior — mantido (não retrocede).`);
+        }
       } catch (err) {
         console.warn(`Falha ao atualizar #${n}: ${err.message}`);
       }

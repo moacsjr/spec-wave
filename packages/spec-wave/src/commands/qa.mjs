@@ -2,12 +2,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { resolveToken } from '../api/auth.mjs';
 import { getIssue, getPR, commentOnIssue } from '../api/github-rest.mjs';
-import { addProjectItem, setItemSingleSelect, getSingleSelectField, getIssueParent } from '../api/github-graphql.mjs';
+import { addProjectItem, setItemSingleSelect, getSingleSelectField, getIssueParent, getItemSingleSelectValue } from '../api/github-graphql.mjs';
 import { detectIssueType } from '../lib/issue-type.mjs';
-import { CONFIG_FILE, STATUS_OPTIONS } from '../config.mjs';
+import { CONFIG_FILE, STATUS_OPTIONS, STAGE_ORDER, PROGRESS_TODO } from '../config.mjs';
 
 const QA_STAGE = STATUS_OPTIONS.find(s => s.name.includes('QA'))?.name;
-const TODO_STATUS = 'Todo';
+const TODO_STATUS = PROGRESS_TODO;
 
 function extractIssueNumbers(body) {
   if (!body) return [];
@@ -50,9 +50,17 @@ async function resolveFeatureIssue(token, owner, repo, issueNumber) {
   return null;
 }
 
+// Avança para a Etapa "🧪 QA" e reinicia o Status para "Todo". Uma issue só
+// AVANÇA: se já estiver em QA ou etapa posterior, não é tocada (retorna false).
 async function setQA(token, project, etapaField, statusField, nodeId) {
   const itemId = await addProjectItem(token, project.id, nodeId);
   if (etapaField?.id && QA_STAGE) {
+    const current = await getItemSingleSelectValue(token, itemId, etapaField.id).catch(() => null);
+    const curIdx = current ? STAGE_ORDER.indexOf(current) : -1;
+    const tgtIdx = STAGE_ORDER.indexOf(QA_STAGE);
+    if (curIdx !== -1 && tgtIdx !== -1 && curIdx >= tgtIdx) {
+      return false; // já está em QA ou adiante — não retrocede
+    }
     const optionId = etapaField.options?.[QA_STAGE];
     if (optionId) await setItemSingleSelect(token, project.id, itemId, etapaField.id, optionId);
   }
@@ -60,6 +68,7 @@ async function setQA(token, project, etapaField, statusField, nodeId) {
     const optionId = statusField.options?.[TODO_STATUS];
     if (optionId) await setItemSingleSelect(token, project.id, itemId, statusField.id, optionId);
   }
+  return true;
 }
 
 export async function qa({ prNumber }) {
@@ -115,9 +124,13 @@ export async function qa({ prNumber }) {
     if (!feature || seen.has(feature.number)) continue;
     seen.add(feature.number);
     try {
-      await setQA(projectToken, project, etapaField, statusField, feature.node_id);
-      updated.push(`#${feature.number} ${feature.title}`);
-      console.log(`Feature #${feature.number} → "${QA_STAGE}" / Status "${TODO_STATUS}".`);
+      const moved = await setQA(projectToken, project, etapaField, statusField, feature.node_id);
+      if (moved) {
+        updated.push(`#${feature.number} ${feature.title}`);
+        console.log(`Feature #${feature.number} → "${QA_STAGE}" / Status "${TODO_STATUS}".`);
+      } else {
+        console.log(`Feature #${feature.number} já está em "${QA_STAGE}" ou etapa posterior — mantida (não retrocede).`);
+      }
     } catch (err) {
       console.warn(`Falha ao atualizar Feature #${feature.number}: ${err.message}`);
     }
