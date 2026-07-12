@@ -60,6 +60,7 @@ export const STATUS_OPTIONS = [
 // Etapas (campo Etapa) referenciadas pelo fluxo de implementação.
 export const STAGE_DEVELOPMENT = STATUS_OPTIONS.find(s => s.name.includes('Desenvolvimento')).name;
 export const STAGE_CODE_REVIEW = STATUS_OPTIONS.find(s => s.name.includes('Code Review')).name;
+export const STAGE_DONE = STATUS_OPTIONS.find(s => s.name.includes('Done')).name;
 // Ordem canônica das etapas — usada para garantir que uma issue só AVANÇA.
 export const STAGE_ORDER = STATUS_OPTIONS.map(s => s.name);
 
