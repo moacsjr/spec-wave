@@ -166,7 +166,7 @@ Mesmas flags do `issue` (exceto `--type`, fixo em `feature`). Mantido para o flu
 | `--feature-dir <path>` | string | Caminho `docs/features/<slug>` para anexar `spec.md`/`plan.md` como contexto (sobrescreve a resolução automática). |
 | `--dry-run` | flag | Monta o contexto e imprime o comando do spec-kit **sem executar**. |
 
-> Diferente dos quatro acima, `implement` roda **localmente** (lê `.spec-wave.json`, como `issue`), não por Action. Detecta o tipo da issue: **Story** → coleta todas as Tasks (sub-issues) e aciona o spec-kit uma única vez; **Task** → só aquela task. Monta o contexto em `.spec-wave/implement-<n>.md` e chama o comando configurado em `specKit.command` (no `.spec-wave.json`) ou na env `SPEC_WAVE_IMPLEMENT_CMD`. Placeholders disponíveis no template: `{tasksFile} {specFile} {planFile} {issue} {type} {title}`. Se nada estiver configurado, ele apenas monta o contexto e mostra como configurar (não executa). O contexto inclui instruções para o agente implementar as Tasks **sequencialmente, uma por vez**: mover a task para **🚧 Desenvolvimento** só ao iniciá-la e para **🎉 Done** ao concluí-la, antes de passar para a próxima (nunca todas em "in progress" ao mesmo tempo). **Ao concluir toda a Story**: fazer o commit, abrir o PR e mover a **Feature** e a **Story** para **👀 Code Review** (as Tasks permanecem em 🎉 Done).
+> Diferente dos quatro acima, `implement` roda **localmente** (lê `.spec-wave.json`, como `issue`), não por Action. Detecta o tipo da issue: **Story** → coleta todas as Tasks (sub-issues) e aciona o spec-kit uma única vez; **Task** → só aquela task. Monta o contexto em `.spec-wave/implement-<n>.md` e chama o comando configurado em `specKit.command` (no `.spec-wave.json`) ou na env `SPEC_WAVE_IMPLEMENT_CMD`. Placeholders disponíveis no template: `{tasksFile} {specFile} {planFile} {issue} {type} {title}`. Se nada estiver configurado, ele apenas monta o contexto e mostra como configurar (não executa). O contexto inclui instruções para o agente implementar as Tasks **sequencialmente, uma por vez**: mover a task para **🚧 Desenvolvimento** só ao iniciá-la e para **🎉 Done** ao concluí-la, antes de passar para a próxima (nunca todas em "in progress" ao mesmo tempo). **Ao concluir toda a Story**: fazer o commit, abrir o PR e mover a **Feature, a Story e todas as Tasks juntas** para **👀 Code Review** (tudo anda junto com a Feature, na mesma etapa).
 
 ---
 
@@ -396,7 +396,7 @@ Aciona o spec-kit para implementar uma **Story** (todas as suas Tasks) ou uma **
    npx @spec-wave/cli implement <número> --dry-run
    ```
 3. Mostre ao usuário o contexto montado em `.spec-wave/implement-<número>.md` e o comando. Esse arquivo contém as **instruções de execução sequencial**: implemente as Tasks **uma por vez** — mova a task para **🚧 Desenvolvimento** só ao iniciá-la e para **🎉 Done** ao concluí-la, antes de passar para a próxima. **Nunca** coloque várias tasks em "in progress" ao mesmo tempo.
-4. **Se você (agente) for implementar diretamente** (sem `specKit.command`): siga o contexto task por task, na ordem listada, respeitando o ciclo In Progress → implementar → Done de cada task antes da seguinte. Atualize o campo "Etapa" do item no board via `gh`. **Ao concluir toda a Story**: faça o commit, abra o PR e mova a **Feature** e a **Story** para **👀 Code Review** (as Tasks ficam em 🎉 Done).
+4. **Se você (agente) for implementar diretamente** (sem `specKit.command`): siga o contexto task por task, na ordem listada, respeitando o ciclo In Progress → implementar → Done de cada task antes da seguinte. Atualize o campo "Etapa" do item no board via `gh`. **Ao concluir toda a Story**: faça o commit, abra o PR e mova a **Feature, a Story e todas as Tasks juntas** para **👀 Code Review** (tudo anda junto com a Feature, na mesma etapa).
 5. Se o usuário aprovar e o spec-kit estiver configurado, rode sem `--dry-run`:
    ```bash
    npx @spec-wave/cli implement <número>
@@ -404,7 +404,7 @@ Aciona o spec-kit para implementar uma **Story** (todas as suas Tasks) ou uma **
    - Se o spec-kit **não** estiver configurado, o comando só monta o contexto e mostra como configurar (`specKit.command` / `SPEC_WAVE_IMPLEMENT_CMD`). Ajude o usuário a definir o template (placeholders: `{tasksFile} {specFile} {planFile} {issue} {type} {title}`).
    - Use `--feature-dir docs/features/<slug>` se a resolução automática da Feature falhar (a skill avisa com warning) e você quiser anexar `spec.md`/`plan.md` como contexto.
 6. Se a issue **não** for Story nem Task (ex.: Feature, Bug), o comando recusa — oriente o usuário: Features se decompõem (`/spec-wave decompose`); implemente as Stories/Tasks resultantes.
-7. Ao final (Story implementada, commit feito, PR aberto e Feature/Story em **👀 Code Review**): confirme o resultado com o usuário e oriente a revisão do PR.
+7. Ao final (Story implementada, commit feito, PR aberto e Feature + Story + Tasks em **👀 Code Review**): confirme o resultado com o usuário e oriente a revisão do PR.
 
 ---
 

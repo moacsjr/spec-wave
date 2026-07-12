@@ -77,9 +77,11 @@ function buildContext({ type, issue, tasks, feature, spec, plan, specPath, planP
     lines.push('   1. Faça o **commit** de todas as mudanças da implementação.');
     lines.push(`   2. Abra o **Pull Request** da Story #${issue.number}.`);
     lines.push(
-      `   3. Mova ${feature ? `a Feature #${feature.number}` : 'a Feature (issue pai da Story)'} e a ` +
-      `Story #${issue.number} para **${STAGE_CODE_REVIEW}**. ` +
-      `As **Tasks permanecem em ${STAGE_DONE}** (não as mova para trás).`
+      `   3. Mova para **${STAGE_CODE_REVIEW}** — **tudo junto, andando com a Feature**: ` +
+      `${feature ? `a Feature #${feature.number}` : 'a Feature (issue pai da Story)'}, ` +
+      `a Story #${issue.number} e **todas as ${tasks.length} Task(s)** ` +
+      `(${tasks.map(t => `#${t.number}`).join(', ')}). ` +
+      'Feature, Story e Tasks devem ficar na MESMA etapa (Code Review).'
     );
   } else {
     lines.push(`Implemente a Task #${issue.number} bracketando o status no GitHub Project:`);
