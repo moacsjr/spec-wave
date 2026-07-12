@@ -87,6 +87,20 @@ program
   });
 
 program
+  .command('install-skill')
+  .description('Instala a skill spec-wave no(s) agente(s) detectado(s): Claude Code, Cursor, opencode, Cline, Kilo, Antigravity, AGENTS.md')
+  .option('--agent <names>', 'Agente(s) alvo, separados por vírgula (pula a detecção)')
+  .option('--all', 'Instala em todos os agentes detectados')
+  .option('--global', 'Instala no escopo do usuário (padrão: projeto)')
+  .option('--dry-run', 'Mostra o que seria instalado sem gravar')
+  .option('--force', 'Sobrescreve arquivos existentes sem confirmar')
+  .option('--yes', 'Modo não-interativo')
+  .action(async (options) => {
+    const { installSkill } = await import('../src/commands/install-skill.mjs');
+    await installSkill(options).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
   .command('uninstall')
   .description('Remove labels, arquivos .github e o .spec-wave.json (mantém o GitHub Project)')
   .option('--repo <owner/repo>', 'Repositório (padrão: lê do .spec-wave.json)')

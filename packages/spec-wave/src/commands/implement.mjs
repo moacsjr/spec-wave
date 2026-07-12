@@ -4,7 +4,7 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import path from 'node:path';
 import { resolveToken } from '../api/auth.mjs';
-import { CONFIG_FILE } from '../config.mjs';
+import { CONFIG_FILE, STAGE_IN_PROGRESS, STAGE_DONE, STAGE_CODE_REVIEW } from '../config.mjs';
 import { getIssue } from '../api/github-rest.mjs';
 import { listSubIssues, getIssueParent } from '../api/github-graphql.mjs';
 import { detectIssueType } from '../lib/issue-type.mjs';
@@ -14,14 +14,17 @@ import { slugify } from '../lib/slugify.mjs';
 const WORK_DIR = '.spec-wave';
 
 // Sobe a cadeia de pais (Task → Story → Feature) até achar uma issue do tipo
-// "Feature" e devolve seu título (para resolver docs/features/<slug>). Limita a
-// profundidade para evitar loops em dados inconsistentes.
-async function resolveFeatureTitle(token, startNodeId) {
+// "Feature" e devolve { number, title } — usado para resolver docs/features/<slug>
+// e para as instruções de fim de Story (mover a Feature para Code Review). Limita
+// a profundidade para evitar loops em dados inconsistentes.
+async function resolveFeature(token, startNodeId) {
   let current = startNodeId;
   for (let depth = 0; depth < 5 && current; depth++) {
     const parent = await getIssueParent(token, current);
     if (!parent) return null;
-    if (detectIssueType({ title: parent.title }) === 'Feature') return parent.title;
+    if (detectIssueType({ title: parent.title }) === 'Feature') {
+      return { number: parent.number, title: parent.title };
+    }
     current = parent.nodeId;
   }
   return null;
@@ -40,7 +43,7 @@ function readSpecPlan(featureDir) {
 }
 
 // Monta o markdown de contexto que será entregue ao spec-kit implement.
-function buildContext({ type, issue, tasks, spec, plan, specPath, planPath }) {
+function buildContext({ type, issue, tasks, feature, spec, plan, specPath, planPath }) {
   const lines = [];
   lines.push(`# Contexto de implementação — ${type} #${issue.number}`);
   lines.push('');
@@ -50,32 +53,55 @@ function buildContext({ type, issue, tasks, spec, plan, specPath, planPath }) {
     lines.push(issue.body.trim());
   }
 
-  // Issues cujo status deve ir para "in progress" ao iniciar: a issue alvo
-  // (Story ou Task) e, no caso de Story, todas as suas Tasks.
-  const inProgress = [issue.number, ...tasks.map(t => t.number)]
-    .filter((n, i, arr) => arr.indexOf(n) === i);
+  // Fluxo SEQUENCIAL, uma task por vez: cada task só vai para "In Progress"
+  // quando seu desenvolvimento começa e vai para "Done" ao concluir — nunca
+  // todas as tasks em "In Progress" ao mesmo tempo.
   lines.push('');
-  lines.push('## Instruções para o agente');
+  lines.push('## Instruções de execução (uma task por vez, sequencial)');
+  lines.push('');
+  if (type === 'Story') {
+    lines.push(
+      `Implemente as ${tasks.length} task(s) desta Story **uma de cada vez, na ordem listada ` +
+      'abaixo**. É PROIBIDO mover mais de uma task para "In Progress" ao mesmo tempo: uma task ' +
+      'só entra em desenvolvimento depois que a anterior estiver concluída.'
+    );
+    lines.push('');
+    lines.push(`1. Ao **iniciar a primeira** task, mova a Story #${issue.number} para **${STAGE_IN_PROGRESS}**.`);
+    lines.push('2. Para **cada task**, na ordem, execute este ciclo completo antes de passar para a próxima:');
+    lines.push(`   1. **Ao começar a task:** mova o status (campo "Etapa") *apenas dessa task* para **${STAGE_IN_PROGRESS}** (In Progress). Nenhuma outra task.`);
+    lines.push('   2. **Implemente** essa task por completo.');
+    lines.push(`   3. **Ao concluir a task:** mova o status *dessa task* para **${STAGE_DONE}** (Done).`);
+    lines.push('   4. Só então avance para a próxima task e repita o ciclo.');
+    lines.push('');
+    lines.push(`3. **Ao concluir a implementação de TODA a Story** (todas as tasks em **${STAGE_DONE}**):`);
+    lines.push('   1. Faça o **commit** de todas as mudanças da implementação.');
+    lines.push(`   2. Abra o **Pull Request** da Story #${issue.number}.`);
+    lines.push(
+      `   3. Mova ${feature ? `a Feature #${feature.number}` : 'a Feature (issue pai da Story)'} e a ` +
+      `Story #${issue.number} para **${STAGE_CODE_REVIEW}**. ` +
+      `As **Tasks permanecem em ${STAGE_DONE}** (não as mova para trás).`
+    );
+  } else {
+    lines.push(`Implemente a Task #${issue.number} bracketando o status no GitHub Project:`);
+    lines.push('');
+    lines.push(`1. **Ao começar:** mova o status (campo "Etapa") da Task #${issue.number} para **${STAGE_IN_PROGRESS}** (In Progress).`);
+    lines.push('2. **Implemente** a task por completo.');
+    lines.push(`3. **Ao concluir:** mova o status da Task #${issue.number} para **${STAGE_DONE}** (Done).`);
+  }
   lines.push('');
   lines.push(
-    'Antes de começar a implementação, atualize o status no GitHub Project para ' +
-    '**🚧 Desenvolvimento** (in progress) ' +
-    (type === 'Story'
-      ? `da Story #${issue.number} e de cada Task: ${inProgress.filter(n => n !== issue.number).map(n => `#${n}`).join(', ')}.`
-      : `da Task #${issue.number}.`)
-  );
-  lines.push(
-    '(Atualize o campo "Etapa"/Status do item no board; mantenha o status coerente ' +
-    'conforme o progresso da implementação.)'
+    `> Mantenha o status coerente com o progresso real: nenhuma task pode ficar em "${STAGE_IN_PROGRESS}" ` +
+    `antes de você começá-la, nem em "${STAGE_DONE}" antes de concluí-la. Atualize o campo "Etapa"/Status ` +
+    'do item no GitHub Project.'
   );
 
   lines.push('');
-  lines.push(`## Tasks a implementar (${tasks.length})`);
-  for (const t of tasks) {
+  lines.push(`## Tasks a implementar — NESTA ORDEM (${tasks.length})`);
+  tasks.forEach((t, i) => {
     lines.push('');
-    lines.push(`### #${t.number} ${t.title}`);
+    lines.push(`### ${i + 1}. #${t.number} ${t.title}`);
     if (t.body && t.body.trim()) lines.push(t.body.trim());
-  }
+  });
 
   if (spec) {
     lines.push('');
@@ -171,11 +197,12 @@ export async function implement({ issue: issueArg, featureDir: featureDirOpt, dr
     return;
   }
 
-  // 4. Resolve spec.md/plan.md da Feature (enriquecimento opcional).
+  // 4. Resolve a Feature (pai na cadeia) — para spec.md/plan.md e para as
+  // instruções de fim de Story (mover Feature + Story para Code Review).
+  const feature = await resolveFeature(token, issue.node_id);
   let featureDir = featureDirOpt;
-  if (!featureDir) {
-    const featureTitle = await resolveFeatureTitle(token, issue.node_id);
-    if (featureTitle) featureDir = path.join('docs', 'features', slugify(featureTitle));
+  if (!featureDir && feature?.title) {
+    featureDir = path.join('docs', 'features', slugify(feature.title));
   }
   let specPlan = { spec: null, plan: null, specPath: null, planPath: null };
   if (featureDir && existsSync(featureDir)) {
@@ -187,7 +214,7 @@ export async function implement({ issue: issueArg, featureDir: featureDirOpt, dr
   }
 
   // 5. Monta e grava o arquivo de contexto.
-  const context = buildContext({ type, issue, tasks, ...specPlan });
+  const context = buildContext({ type, issue, tasks, feature, ...specPlan });
   mkdirSync(WORK_DIR, { recursive: true });
   const tasksFile = path.join(WORK_DIR, `implement-${issueNumber}.md`);
   writeFileSync(tasksFile, context);

@@ -1,6 +1,6 @@
 {
   "name": "@spec-wave/cli",
-  "version": "0.5.7",
+  "version": "0.5.9",
   "description": "Setup spec-driven GitHub workflow with Projects v2, labels, issue templates, and AI-powered Actions",
   "type": "module",
   "bin": {

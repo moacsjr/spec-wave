@@ -4,6 +4,9 @@
 // pelo comando `info` (e pela skill) para detectar se o spec-wave já foi configurado.
 export const CONFIG_FILE = '.spec-wave.json';
 
+// Portal Web da ferramenta — exibido ao final do `init` e no `info`.
+export const PORTAL_URL = 'https://spec-wave.astratech.net.br';
+
 // Providers de IA suportados pelos workflows (generate-plan/spec/decompose).
 // O provider e o modelo escolhidos no `init` são persistidos em .spec-wave.json
 // (bloco `ai`) e lidos em runtime por src/lib/claude.mjs. Cada provider declara
@@ -47,6 +50,14 @@ export const STATUS_OPTIONS = [
   { name: '🚀 Deploy',           color: 'ORANGE' },
   { name: '🎉 Done',            color: 'GREEN'  },
 ];
+
+// Etapas usadas pelo fluxo de implementação (comando `implement`): cada task vai
+// para "In Progress" ao INICIAR seu desenvolvimento e para "Done" ao concluir;
+// ao final da Story, Feature + Story vão para "Code Review" (após commit + PR).
+// Resolvidas por nome para não quebrar se a ordem/cor das opções mudar.
+export const STAGE_IN_PROGRESS = STATUS_OPTIONS.find(s => s.name.includes('Desenvolvimento')).name;
+export const STAGE_DONE = STATUS_OPTIONS.find(s => s.name.includes('Done')).name;
+export const STAGE_CODE_REVIEW = STATUS_OPTIONS.find(s => s.name.includes('Code Review')).name;
 
 export const CUSTOM_FIELDS = [
   {

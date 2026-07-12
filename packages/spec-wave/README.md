@@ -86,9 +86,9 @@ Ferramenta Node.js que configura e opera o fluxo via linha de comando.
 | `code-review.yml` | PR aberto/reaberto | Move Feature para `👀 Code Review` |
 | `qa.yml` | PR aprovado | Move Feature para `🧪 QA` |
 
-### Skill (`skill/SKILL.md`)
+### Skill (`src/templates/skill/SKILL.md`)
 
-Claude Code skill que guia o usuário pelo fluxo via comandos como `/spec-wave spec 42`, `/spec-wave plan 42`, `/spec-wave decompose 42`. A skill lê o `.spec-wave.json` local, detecta o estado atual e executa os comandos corretos sem abrir wizards interativos.
+Skill que guia o usuário pelo fluxo via comandos como `/spec-wave spec 42`, `/spec-wave plan 42`, `/spec-wave decompose 42`. A skill lê o `.spec-wave.json` local, detecta o estado atual e executa os comandos corretos sem abrir wizards interativos. Instale-a no seu agente com `install-skill` (ver abaixo).
 
 ### `.spec-wave.json`
 
@@ -131,31 +131,29 @@ spec-wave --help
 
 ## Instalação da Skill
 
-A skill permite usar o fluxo diretamente no Claude Code via `/spec-wave`.
+A skill permite usar o fluxo diretamente no seu agente via `/spec-wave`.
 
-**1. Copie o arquivo da skill:**
-
-```bash
-mkdir -p ~/.claude/skills/spec-wave
-cp skill/SKILL.md ~/.claude/skills/spec-wave/SKILL.md
-```
-
-Ou, se estiver em outro repositório:
+**1. Instale a skill com o comando `install-skill`:**
 
 ```bash
-mkdir -p ~/.claude/skills/spec-wave
-curl -o ~/.claude/skills/spec-wave/SKILL.md \
-  https://raw.githubusercontent.com/moacsjr/spec-wave/main/skill/SKILL.md
+# Autodetecta o agente em uso e instala no local/formato correto
+npx @spec-wave/cli install-skill
 ```
 
-**2. Adicione ao `CLAUDE.md` do projeto:**
+O comando suporta Claude Code, Cursor, opencode, Cline, Kilo Code, Antigravity e o
+padrão genérico `AGENTS.md`. Por padrão instala no escopo do projeto (versionável
+com o time); use `--global` para o escopo do usuário. Escolha alvos com
+`--agent <nomes>` (ex.: `--agent claude,cursor`) ou `--all` para todos os
+detectados. Use `--dry-run` para pré-visualizar sem gravar.
+
+**2. Adicione ao `CLAUDE.md` (ou equivalente) do projeto:**
 
 ```markdown
 # spec-wave skill
 Trigger `/spec-wave` to invoke the spec-wave skill.
 ```
 
-**3. Use no Claude Code:**
+**3. Use no seu agente:**
 
 ```
 /spec-wave setup

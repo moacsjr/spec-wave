@@ -4,7 +4,7 @@ description: "Use when the user wants to set up a spec-driven GitHub workflow, c
 argument-hint: "[info|setup|issue|feature|spec|plan|ready|decompose|implement|uninstall|rfc|fix-pr] [target]"
 user-invocable: true
 allowed-tools:
-  - Bash(npx spec-wave *)
+  - Bash(npx @spec-wave/cli *)
   - Bash(gh issue *)
   - Bash(gh project *)
   - Bash(gh repo view *)
@@ -27,16 +27,18 @@ Este skill guia o usuário pelo fluxo spec-driven definido no RFC-001.
 
 > **Antes de responder a qualquer sub-comando**, leia o arquivo `rfc/rfc-integrate-spec-kit-into-kanban.md` se ele existir no diretório atual, para embasar suas respostas no processo real da equipe.
 
+> **Verifique se esta skill está atualizada:** logo no topo deste arquivo há um banner `spec-wave skill vX.Y.Z` (inserido na instalação). Compare com `npx @spec-wave/cli --version`. Se a CLI for **mais recente**, esta skill está desatualizada — avise o usuário e sugira rodar `npx @spec-wave/cli install-skill --force` para atualizá-la (a skill é uma cópia estática e **não** acompanha o `npx` sozinha). Se o banner estiver ausente, a skill foi instalada por uma versão antiga: sugira a mesma atualização.
+
 ---
 
 ## Detecção de configuração (faça isto primeiro, sempre)
 
-Antes de qualquer sub-comando, leia o arquivo `.spec-wave.json` na raiz do repositório atual (use o tool Read). Esse arquivo é gravado pelo `npx spec-wave init` e é a fonte de estado persistente entre sessões.
+Antes de qualquer sub-comando, leia o arquivo `.spec-wave.json` na raiz do repositório atual (use o tool Read). Esse arquivo é gravado pelo `npx @spec-wave/cli init` e é a fonte de estado persistente entre sessões.
 
 - **Se existir**, o spec-wave já foi configurado. Use seus campos para contextualizar as respostas, sem perguntar de novo:
   - `owner`/`repo` → repositório alvo dos comandos `gh`
   - `project.url` / `project.title` → o GitHub Project a referenciar
-  - `version` → versão da CLI usada no `init` (compare com `npx spec-wave --version`; se divergir, sugira `npx spec-wave refresh --config` para atualizar o arquivo, ou re-rodar o `init` para atualizar workflows/labels)
+  - `version` → versão da CLI usada no `init` (compare com `npx @spec-wave/cli --version`; se divergir, sugira `npx @spec-wave/cli refresh --config` para atualizar o arquivo, ou re-rodar o `init` para atualizar workflows/labels)
   - `initializedAt` → quando foi configurado
   Não rode `/spec-wave setup` de novo a menos que o usuário peça explicitamente.
 - **Se não existir**, o repositório provavelmente ainda não foi configurado. Sugira começar por `/spec-wave setup`.
@@ -80,15 +82,15 @@ Labels de gatilho:
 - `spec-wave:ready` → dispara `validate.yml` → valida ambos os arquivos
 - `spec-wave:decompose` → dispara `decompose.yml` → gera Stories e Tasks
 
-A etapa **🚧 Desenvolvimento** é coberta pelo comando **local** `spec-wave implement <número>` (não é uma label/Action): lê uma Story ou Task e aciona o spec-kit para implementar. Veja `/spec-wave implement`.
+A etapa **🚧 Desenvolvimento** é coberta pelo comando **local** `npx @spec-wave/cli implement <número>` (não é uma label/Action): lê uma Story ou Task e aciona o spec-kit para implementar. Veja `/spec-wave implement`.
 
 ---
 
 ## Referência da CLI (conheça os parâmetros ANTES de executar)
 
-Esta skill é um **wrapper** da CLI `spec-wave`. Regra de ouro: **nunca rode um comando sem os parâmetros que ele aceita** esperando que ele pergunte — colete os valores com o usuário e passe via flags. Em especial, **`init` sem `--repo` abre um wizard interativo (@clack/prompts) que a skill NÃO consegue dirigir** — sempre passe `--repo`.
+Esta skill é um **wrapper** da CLI `@spec-wave/cli`, sempre invocada como `npx @spec-wave/cli <comando>`. Regra de ouro: **nunca rode um comando sem os parâmetros que ele aceita** esperando que ele pergunte — colete os valores com o usuário e passe via flags. Em especial, **`init` sem `--repo` abre um wizard interativo (@clack/prompts) que a skill NÃO consegue dirigir** — sempre passe `--repo`.
 
-### `spec-wave init` — configura o repositório
+### `@spec-wave/cli init` — configura o repositório
 | Flag | Tipo | Descrição |
 |------|------|-----------|
 | `--repo <owner/repo>` | string | Repositório alvo. **Passe SEMPRE** para evitar o wizard interativo. |
@@ -98,25 +100,25 @@ Esta skill é um **wrapper** da CLI `spec-wave`. Regra de ouro: **nunca rode um 
 | `--skip-files` | flag | Pula a criação dos workflows + issue templates. |
 | `--dry-run` | flag | Simula a configuração sem alterar nada. |
 
-### `spec-wave issue` — cria um work item tipado, opcionalmente como sub-issue, e adiciona ao board
+### `@spec-wave/cli issue` — cria um work item tipado, opcionalmente como sub-issue, e adiciona ao board
 | Flag | Tipo | Descrição |
 |------|------|-----------|
 | `--title <title>` | string (obrigatório) | Título, **sem** o prefixo de tipo (a CLI adiciona, ex.: `[STORY]`). |
 | `--type <type>` | string | `initiative`, `epic`, `feature`, `story`, `task`, `bug`, `spike` ou `rfc`. Default: `feature`. |
 | `--parent <n>` | string | Número da issue pai — cria como **sub-issue** dela (relação nativa do GitHub). |
 | `--body <text>` | string | Descrição. |
-| `--priority <p>` | string | `P0`, `P1`, `P2` ou `P3`. |
+| `--priority <p>` | string | **Opcional.** `P0`, `P1`, `P2` ou `P3`. Omita se o usuário não pediu — a prioridade fica `null` (sem prioridade). Nunca atribua por conta própria. |
 | `--area <area>` | string | `Frontend`, `Backend`, `Mobile`, `Infra`, `DevOps` ou `Data`. |
 
-> Faz tudo: cria a issue (label de tipo + prioridade), vincula ao parent como sub-issue, adiciona ao Project e define os campos **Etapa = 📥 Backlog**, **Work Item Type**, **Priority** e **Area**. Grava `Parent: #N` no corpo. Lê o Project do `.spec-wave.json`. **Não use `gh issue create` direto** — ele não adiciona ao board nem vincula o parent.
+> Faz tudo: cria a issue (label de tipo — e de prioridade **apenas se `--priority` for informado**), vincula ao parent como sub-issue, adiciona ao Project e define os campos **Etapa = 📥 Backlog**, **Work Item Type**, **Area** e, **só se informada, Priority**. Grava `Parent: #N` no corpo. Lê o Project do `.spec-wave.json`. **Não use `gh issue create` direto** — ele não adiciona ao board nem vincula o parent.
 
-### `spec-wave initiative` — atalho de `issue --type initiative`
+### `@spec-wave/cli initiative` — atalho de `issue --type initiative`
 Cria o nó raiz da hierarquia (agrupa Epics). Mesmas flags do `issue` exceto `--type` (fixo em `initiative`) e `--parent` (Initiative é raiz, não tem pai).
 
-### `spec-wave feature` — atalho de `issue --type feature`
+### `@spec-wave/cli feature` — atalho de `issue --type feature`
 Mesmas flags do `issue` (exceto `--type`, fixo em `feature`). Mantido para o fluxo do RFC-001.
 
-### `spec-wave uninstall` — remove a configuração (mantém o Project)
+### `@spec-wave/cli uninstall` — remove a configuração (mantém o Project)
 | Flag | Tipo | Descrição |
 |------|------|-----------|
 | `--repo <owner/repo>` | string | Repositório (default: lê do `.spec-wave.json`). |
@@ -128,33 +130,33 @@ Mesmas flags do `issue` (exceto `--type`, fixo em `feature`). Mantido para o flu
 
 > Remove labels + arquivos `.github` + `.spec-wave.json`. **NUNCA apaga o GitHub Project** (preserva o histórico do board) — o usuário deve excluí-lo manualmente se quiser.
 
-### `spec-wave info` — status de configuração do repo atual
+### `@spec-wave/cli info` — status de configuração do repo atual
 | Flag | Tipo | Descrição |
 |------|------|-----------|
 | `--json` | flag | Saída JSON (`{"initialized":bool, ...}`) para parsing programático. |
 
-### `spec-wave refresh` — atualiza o `.spec-wave.json` local
+### `@spec-wave/cli refresh` — atualiza o `.spec-wave.json` local
 | Flag | Tipo | Descrição |
 |------|------|-----------|
 | `--config` | flag | Re-consulta o GitHub Project e reescreve o `.spec-wave.json` (IDs do campo Etapa, opções, number, versão da CLI). |
 
 > Use quando o `.spec-wave.json` estiver desatualizado: repos inicializados por uma versão antiga (sem `etapaFieldId`/`stageOptions`), Project renomeado, ou versão da CLI divergente. Escreve no arquivo **local** — faça commit depois.
 
-### `spec-wave generate-plan` · `generate-spec` · `validate` · `decompose`
+### `@spec-wave/cli generate-plan` · `generate-spec` · `validate` · `decompose`
 | Flag | Tipo | Descrição |
 |------|------|-----------|
 | `--issue-number <n>` | string (obrigatório) | Número da issue no GitHub. |
 
 > ⚠️ Esses quatro comandos são executados pelos **GitHub Actions** (disparados por labels), **não** pela skill diretamente. Veja a *Regra fundamental*: para gerar plan/spec/decompor, adicione a **label** correspondente — não rode o comando à mão (a não ser para debug local).
 
-### `spec-wave implement` — aciona o spec-kit para uma Story ou Task (comando LOCAL)
+### `@spec-wave/cli implement` — aciona o spec-kit para uma Story ou Task (comando LOCAL)
 | Flag/Arg | Tipo | Descrição |
 |----------|------|-----------|
 | `<issue>` | string (obrigatório) | Número da issue (Story ou Task), ex.: `12` ou `#12`. Argumento posicional. |
 | `--feature-dir <path>` | string | Caminho `docs/features/<slug>` para anexar `spec.md`/`plan.md` como contexto (sobrescreve a resolução automática). |
 | `--dry-run` | flag | Monta o contexto e imprime o comando do spec-kit **sem executar**. |
 
-> Diferente dos quatro acima, `implement` roda **localmente** (lê `.spec-wave.json`, como `issue`), não por Action. Detecta o tipo da issue: **Story** → coleta todas as Tasks (sub-issues) e aciona o spec-kit uma única vez; **Task** → só aquela task. Monta o contexto em `.spec-wave/implement-<n>.md` e chama o comando configurado em `specKit.command` (no `.spec-wave.json`) ou na env `SPEC_WAVE_IMPLEMENT_CMD`. Placeholders disponíveis no template: `{tasksFile} {specFile} {planFile} {issue} {type} {title}`. Se nada estiver configurado, ele apenas monta o contexto e mostra como configurar (não executa). O contexto já inclui uma instrução para o agente mover a Story e as Tasks para **🚧 Desenvolvimento** (in progress) ao iniciar.
+> Diferente dos quatro acima, `implement` roda **localmente** (lê `.spec-wave.json`, como `issue`), não por Action. Detecta o tipo da issue: **Story** → coleta todas as Tasks (sub-issues) e aciona o spec-kit uma única vez; **Task** → só aquela task. Monta o contexto em `.spec-wave/implement-<n>.md` e chama o comando configurado em `specKit.command` (no `.spec-wave.json`) ou na env `SPEC_WAVE_IMPLEMENT_CMD`. Placeholders disponíveis no template: `{tasksFile} {specFile} {planFile} {issue} {type} {title}`. Se nada estiver configurado, ele apenas monta o contexto e mostra como configurar (não executa). O contexto inclui instruções para o agente implementar as Tasks **sequencialmente, uma por vez**: mover a task para **🚧 Desenvolvimento** só ao iniciá-la e para **🎉 Done** ao concluí-la, antes de passar para a próxima (nunca todas em "in progress" ao mesmo tempo). **Ao concluir toda a Story**: fazer o commit, abrir o PR e mover a **Feature** e a **Story** para **👀 Code Review** (as Tasks permanecem em 🎉 Done).
 
 ---
 
@@ -165,7 +167,7 @@ Mesmas flags do `issue` (exceto `--type`, fixo em `feature`). Mantido para o flu
 Mostra se o repositório atual já foi configurado com o spec-wave.
 
 **Passos:**
-1. Execute: `npx spec-wave info`
+1. Execute: `npx @spec-wave/cli info`
 2. **Se o repositório estiver inicializado**, o comando mostra os dados do `.spec-wave.json` (owner/repo, project, versão da CLI, data). Apresente essas informações ao usuário.
 3. **Se NÃO estiver inicializado**, pergunte ao usuário: "Este repositório ainda não foi configurado com o spec-wave. Quer rodar o `init` agora?"
    - Se sim → siga o fluxo de `/spec-wave setup`.
@@ -175,17 +177,17 @@ Mostra se o repositório atual já foi configurado com o spec-wave.
 
 ### `/spec-wave setup`
 
-Configura o spec-wave no repositório. Você dirige o `init` com flags — **nunca rode `npx spec-wave init` sem `--repo`** (abre o wizard interativo que você não controla).
+Configura o spec-wave no repositório. Você dirige o `init` com flags — **nunca rode `npx @spec-wave/cli init` sem `--repo`** (abre o wizard interativo que você não controla).
 
 **Passos:**
-1. **Já configurado?** Leia `.spec-wave.json` (ou rode `npx spec-wave info`). Se existir, avise (mostre `project.url` e `version`) e confirme com o usuário antes de reconfigurar.
+1. **Já configurado?** Leia `.spec-wave.json` (ou rode `npx @spec-wave/cli info`). Se existir, avise (mostre `project.url` e `version`) e confirme com o usuário antes de reconfigurar.
 2. **Descubra o repositório alvo** (parâmetro `--repo`): rode `gh repo view --json nameWithOwner -q .nameWithOwner` para obter `owner/repo` do repo atual. Confirme com o usuário; se não houver remote, pergunte o `owner/repo`.
 3. **Pergunte o título do Project** (parâmetro `--project-title`). Ofereça o default `<repo> — Spec Wave` e aceite-o se o usuário não tiver preferência.
 4. **Cheque o auth:** `gh auth status`. Se faltarem os escopos `project,repo,workflow`, oriente o usuário a rodar ele mesmo `gh auth refresh --scopes project,repo,workflow` (comando interativo — o usuário executa, não você).
-5. **(Opcional) Pré-visualize** antes de aplicar: `npx spec-wave init --repo <owner/repo> --dry-run`.
+5. **(Opcional) Pré-visualize** antes de aplicar: `npx @spec-wave/cli init --repo <owner/repo> --dry-run`.
 6. **Execute com os parâmetros coletados:**
    ```bash
-   npx spec-wave init --repo <owner/repo> --project-title "<título>"
+   npx @spec-wave/cli init --repo <owner/repo> --project-title "<título>"
    ```
    Use `--skip-project` / `--skip-labels` / `--skip-files` **apenas** para re-rodar uma fase específica que falhou antes.
 7. O `init` cria o Project, as labels, os workflows, um **scaffold de `.github/config/tech_context.yml`** (só se ainda não existir) e grava `.spec-wave.json`. Oriente o usuário a fazer `git pull` para trazer os arquivos ao checkout local.
@@ -201,19 +203,19 @@ Crie um work item tipado (Initiative/Epic/Feature/Story/Task/...) já adicionado
 **Hierarquia típica:** Initiative → Epic → Feature → Story → Task. A **Initiative** é o nó raiz e agrupa Epics. Use `--parent <n>` para criar como sub-issue do nível acima (ex.: um Epic filho de uma Initiative, ou uma Story filha de uma Feature). O GitHub mostra o parent na issue filha e vice-versa; a CLI ainda grava `Parent: #N` no corpo.
 
 **Passos:**
-1. Pergunte ao usuário: tipo (initiative/epic/feature/story/task/...), título (sem prefixo), descrição, área, prioridade, e se há uma issue **pai** (número).
-2. Execute o comando com os parâmetros coletados:
+1. Pergunte ao usuário: tipo (initiative/epic/feature/story/task/...), título (sem prefixo), descrição e se há uma issue **pai** (número). **Prioridade e área são opcionais**: só as inclua se o usuário pedir explicitamente. **Nunca atribua uma prioridade por conta própria** — se o usuário não informou, **omita `--priority`** e a prioridade fica `null` (sem prioridade) no board.
+2. Execute o comando com os parâmetros coletados (inclua **apenas** as flags que o usuário forneceu):
    ```bash
-   npx spec-wave issue \
+   npx @spec-wave/cli issue \
      --type "<tipo>" \
      --title "<título>" \
      --body "<descrição>" \
-     --area "<área>" \
-     --priority "<prioridade>" \
+     --area "<área>" \            # opcional — omita se o usuário não informou
+     --priority "<prioridade>" \  # opcional — só se o usuário pediu; caso contrário OMITA (prioridade fica null)
      --parent "<número-do-pai>"   # opcional
    ```
-   Para Features, pode usar o atalho `npx spec-wave feature --title ...` (equivale a `--type feature`).
-   A CLI cria a issue (label de tipo + prioridade), vincula como sub-issue do parent, adiciona ao Project e define Etapa = 📥 Backlog + Work Item Type + Priority + Area. **Não use `gh issue create`** (não adiciona ao board nem vincula o parent).
+   Para Features, pode usar o atalho `npx @spec-wave/cli feature --title ...` (equivale a `--type feature`).
+   A CLI cria a issue (label de tipo — e de prioridade **apenas se `--priority` for informado**), vincula como sub-issue do parent, adiciona ao Project e define Etapa = 📥 Backlog + Work Item Type + Area (+ Priority só se informada). **Não use `gh issue create`** (não adiciona ao board nem vincula o parent).
 3. Informe o número criado e o vínculo com o pai (se houver).
 4. Para Features: "Quando quiser iniciar, mova para **📋 Spec** e use `/spec-wave spec <número>` para gerar a especificação funcional (o plano técnico vem depois)".
 
@@ -225,8 +227,8 @@ Remove a configuração do spec-wave do repositório (labels, arquivos `.github`
 
 **Passos:**
 1. Confirme com o usuário que ele quer remover (a ação remove labels e faz commits removendo os workflows).
-2. Mostre antes o que será removido com `npx spec-wave uninstall --dry-run`.
-3. Execute `npx spec-wave uninstall` (a CLI pede confirmação; use `--yes` só se o usuário já confirmou).
+2. Mostre antes o que será removido com `npx @spec-wave/cli uninstall --dry-run`.
+3. Execute `npx @spec-wave/cli uninstall` (a CLI pede confirmação; use `--yes` só se o usuário já confirmou).
 4. Lembre o usuário de excluir o **GitHub Project** manualmente, se desejar — a CLI não o apaga de propósito.
 
 ---
@@ -267,7 +269,7 @@ O plano técnico segue o schema do RFC-002 §3.2: **Estratégia Técnica** (com 
 
 ### Tech Context (`.github/config/tech_context.yml`)
 
-Fonte de verdade estática da stack do sistema (RFC-002 §4). O `generate-plan` lê este arquivo para embasar o plano técnico e usar **APENAS** as tecnologias/serviços nele declarados — sem ele, o plano fica genérico e pode inventar APIs inexistentes. O `npx spec-wave init` gera um **scaffold de exemplo** que **deve ser adaptado** à stack real. Use este fluxo quando o arquivo estiver ausente ou desatualizado.
+Fonte de verdade estática da stack do sistema (RFC-002 §4). O `generate-plan` lê este arquivo para embasar o plano técnico e usar **APENAS** as tecnologias/serviços nele declarados — sem ele, o plano fica genérico e pode inventar APIs inexistentes. O `npx @spec-wave/cli init` gera um **scaffold de exemplo** que **deve ser adaptado** à stack real. Use este fluxo quando o arquivo estiver ausente ou desatualizado.
 
 **Como ajudar a criar (quando não existir):**
 
@@ -361,17 +363,18 @@ Aciona o spec-kit para implementar uma **Story** (todas as suas Tasks) ou uma **
 1. Confirme que há `.spec-wave.json` no repo (senão, oriente `/spec-wave setup`).
 2. **Sempre comece com `--dry-run`** para inspecionar o que será feito — detecção do tipo, lista de Tasks coletadas (no caso de Story) e o comando do spec-kit que seria executado:
    ```bash
-   npx spec-wave implement <número> --dry-run
+   npx @spec-wave/cli implement <número> --dry-run
    ```
-3. Mostre ao usuário o contexto montado em `.spec-wave/implement-<número>.md` e o comando.
-4. Se o usuário aprovar e o spec-kit estiver configurado, rode sem `--dry-run`:
+3. Mostre ao usuário o contexto montado em `.spec-wave/implement-<número>.md` e o comando. Esse arquivo contém as **instruções de execução sequencial**: implemente as Tasks **uma por vez** — mova a task para **🚧 Desenvolvimento** só ao iniciá-la e para **🎉 Done** ao concluí-la, antes de passar para a próxima. **Nunca** coloque várias tasks em "in progress" ao mesmo tempo.
+4. **Se você (agente) for implementar diretamente** (sem `specKit.command`): siga o contexto task por task, na ordem listada, respeitando o ciclo In Progress → implementar → Done de cada task antes da seguinte. Atualize o campo "Etapa" do item no board via `gh`. **Ao concluir toda a Story**: faça o commit, abra o PR e mova a **Feature** e a **Story** para **👀 Code Review** (as Tasks ficam em 🎉 Done).
+5. Se o usuário aprovar e o spec-kit estiver configurado, rode sem `--dry-run`:
    ```bash
-   npx spec-wave implement <número>
+   npx @spec-wave/cli implement <número>
    ```
    - Se o spec-kit **não** estiver configurado, o comando só monta o contexto e mostra como configurar (`specKit.command` / `SPEC_WAVE_IMPLEMENT_CMD`). Ajude o usuário a definir o template (placeholders: `{tasksFile} {specFile} {planFile} {issue} {type} {title}`).
    - Use `--feature-dir docs/features/<slug>` se a resolução automática da Feature falhar (a skill avisa com warning) e você quiser anexar `spec.md`/`plan.md` como contexto.
-5. Se a issue **não** for Story nem Task (ex.: Feature, Bug), o comando recusa — oriente o usuário: Features se decompõem (`/spec-wave decompose`); implemente as Stories/Tasks resultantes.
-6. Após implementar: oriente revisar as mudanças, abrir o PR e mover o card para **👀 Code Review**.
+6. Se a issue **não** for Story nem Task (ex.: Feature, Bug), o comando recusa — oriente o usuário: Features se decompõem (`/spec-wave decompose`); implemente as Stories/Tasks resultantes.
+7. Ao final (Story implementada, commit feito, PR aberto e Feature/Story em **👀 Code Review**): confirme o resultado com o usuário e oriente a revisão do PR.
 
 ---
 
