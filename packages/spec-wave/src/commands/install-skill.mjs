@@ -12,16 +12,19 @@ const SKILL_SOURCE = path.join(__dir, '..', 'templates', 'skill', 'SKILL.md');
 // Versão da CLI que gerou a skill instalada — carimbada no arquivo para detecção
 // de desatualização (a skill é uma cópia estática; não acompanha o `npx` sozinha).
 const pkg = JSON.parse(readFileSync(path.join(__dir, '..', '..', 'package.json'), 'utf-8'));
+// Reexportados para o comando `update` (detecção de skill desatualizada).
+export { SKILL_SOURCE };
+export const CLI_VERSION = pkg.version;
 
 // Marcadores usados para gravar/atualizar a skill de forma idempotente em
 // arquivos compartilhados (AGENTS.md) — permite reinstalar sem duplicar.
-const BLOCK_START = '<!-- spec-wave:start -->';
-const BLOCK_END = '<!-- spec-wave:end -->';
+export const BLOCK_START = '<!-- spec-wave:start -->';
+export const BLOCK_END = '<!-- spec-wave:end -->';
 
 // Registro de agentes suportados. Cada alvo descreve como detectá-lo no
 // diretório-base, onde gravar (projeto vs. global) e em que formato converter
 // o SKILL.md. Caminhos conferidos na doc oficial de cada ferramenta.
-const TARGETS = [
+export const TARGETS = [
   {
     key: 'claude',
     name: 'Claude Code',
@@ -84,7 +87,7 @@ const TARGETS = [
 const TARGET_BY_KEY = new Map(TARGETS.map((t) => [t.key, t]));
 
 // Separa o frontmatter YAML do corpo do SKILL.md. Retorna { meta, body }.
-function parseSkill(raw) {
+export function parseSkill(raw) {
   const match = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   if (!match) return { meta: {}, frontmatter: '', body: raw.trim() };
   let meta = {};
@@ -102,12 +105,13 @@ function versionBanner(version) {
   return (
     `> ⚙️ **spec-wave skill v${version}** — esta skill é uma cópia estática. ` +
     'Se `npx @spec-wave/cli --version` indicar uma versão maior, ela está ' +
-    'desatualizada: rode `npx @spec-wave/cli install-skill --force` para atualizá-la.'
+    'desatualizada: rode `npx @spec-wave/cli update` (atualiza só o que mudou) ' +
+    'ou `npx @spec-wave/cli install-skill --force` (só a skill).'
   );
 }
 
 // Converte o SKILL.md para o formato exigido por cada agente, carimbando a versão.
-function renderContent(format, parsed, version) {
+export function renderContent(format, parsed, version) {
   const { meta, frontmatter, body } = parsed;
   const description = meta.description ?? 'Skill spec-wave.';
   const banner = versionBanner(version);
@@ -135,7 +139,7 @@ function renderContent(format, parsed, version) {
 
 // Insere/atualiza o bloco spec-wave num arquivo compartilhado (AGENTS.md),
 // preservando o restante do conteúdo. Idempotente via marcadores.
-function mergeAgentsFile(destPath, block) {
+export function mergeAgentsFile(destPath, block) {
   const existing = existsSync(destPath) ? readFileSync(destPath, 'utf-8') : '';
   const blockRe = new RegExp(
     `${escapeRe(BLOCK_START)}[\\s\\S]*?${escapeRe(BLOCK_END)}\\n?`,
@@ -151,9 +155,18 @@ function escapeRe(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// Extrai o bloco spec-wave (entre marcadores) de um arquivo compartilhado
+// (AGENTS.md). Retorna o texto do bloco incluindo os marcadores, ou null.
+export function extractAgentsBlock(fileContent) {
+  const m = fileContent.match(
+    new RegExp(`${escapeRe(BLOCK_START)}[\\s\\S]*?${escapeRe(BLOCK_END)}`),
+  );
+  return m ? m[0] : null;
+}
+
 // Resolve o alvo do agente para um destino concreto no escopo escolhido.
 // Retorna null quando o agente não suporta o escopo global.
-function resolveDest(target, baseDir, isGlobal) {
+export function resolveDest(target, baseDir, isGlobal) {
   const rel = isGlobal ? target.global : target.project;
   if (!rel) return null;
   const format = isGlobal && target.globalFormat ? target.globalFormat : target.format;
@@ -161,7 +174,7 @@ function resolveDest(target, baseDir, isGlobal) {
 }
 
 // Retorna true se algum dos sinais de detecção existir em baseDir.
-function isDetected(target, baseDir) {
+export function isDetected(target, baseDir) {
   return target.detect.some((sig) => existsSync(path.join(baseDir, sig)));
 }
 

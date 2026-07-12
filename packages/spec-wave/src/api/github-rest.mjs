@@ -43,6 +43,31 @@ export async function createLabel(token, owner, repo, label) {
   }
 }
 
+// Lista todas as labels do repo: [{ name, color, description }]. color é hex
+// sem "#" (minúsculo, como a API retorna). Usado pelo `update` para detectar
+// labels ausentes ou com cor/descrição divergente.
+export async function listLabels(token, owner, repo) {
+  const octokit = makeOctokit(token);
+  const labels = await octokit.paginate(octokit.rest.issues.listLabelsForRepo, {
+    owner,
+    repo,
+    per_page: 100,
+  });
+  return labels.map(l => ({ name: l.name, color: l.color, description: l.description || '' }));
+}
+
+// Atualiza cor/descrição de uma label existente (mantém o nome).
+export async function updateLabel(token, owner, repo, label) {
+  const octokit = makeOctokit(token);
+  await octokit.rest.issues.updateLabel({
+    owner,
+    repo,
+    name: label.name,
+    color: label.color,
+    description: label.description,
+  });
+}
+
 export async function upsertFile(token, owner, repo, path, content, message) {
   const octokit = makeOctokit(token);
   let sha;

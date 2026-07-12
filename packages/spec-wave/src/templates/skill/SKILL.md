@@ -1,7 +1,7 @@
 ---
 name: spec-wave
 description: "Use when the user wants to set up a spec-driven GitHub workflow, create a Feature issue, generate spec.md or plan.md, decompose a Feature into Stories/Tasks, write RFC documentation, or audit and fix a Pull Request. Implements the RFC-001 workflow with GitHub Projects v2, labels, and AI-powered GitHub Actions."
-argument-hint: "[info|setup|issue|feature|spec|plan|ready|decompose|implement|uninstall|rfc|fix-pr] [target]"
+argument-hint: "[info|setup|update|issue|feature|spec|plan|ready|decompose|implement|uninstall|rfc|fix-pr] [target]"
 user-invocable: true
 allowed-tools:
   - Bash(npx @spec-wave/cli *)
@@ -27,7 +27,7 @@ Este skill guia o usuário pelo fluxo spec-driven definido no RFC-001.
 
 > **Antes de responder a qualquer sub-comando**, leia o arquivo `rfc/rfc-integrate-spec-kit-into-kanban.md` se ele existir no diretório atual, para embasar suas respostas no processo real da equipe.
 
-> **Verifique se esta skill está atualizada:** logo no topo deste arquivo há um banner `spec-wave skill vX.Y.Z` (inserido na instalação). Compare com `npx @spec-wave/cli --version`. Se a CLI for **mais recente**, esta skill está desatualizada — avise o usuário e sugira rodar `npx @spec-wave/cli install-skill --force` para atualizá-la (a skill é uma cópia estática e **não** acompanha o `npx` sozinha). Se o banner estiver ausente, a skill foi instalada por uma versão antiga: sugira a mesma atualização.
+> **Verifique se esta skill está atualizada:** logo no topo deste arquivo há um banner `spec-wave skill vX.Y.Z` (inserido na instalação). Compare com `npx @spec-wave/cli --version`. Se a CLI for **mais recente** (ou o banner estiver ausente = instalada por versão antiga), esta skill está desatualizada — avise o usuário e sugira `npx @spec-wave/cli update` (detecta e atualiza só o que mudou: skill, `.spec-wave.json` e workflows/labels do repo) ou, para atualizar só a skill, `npx @spec-wave/cli install-skill --force`. A skill é uma cópia estática e **não** acompanha o `npx` sozinha.
 
 ---
 
@@ -142,6 +142,16 @@ Mesmas flags do `issue` (exceto `--type`, fixo em `feature`). Mantido para o flu
 
 > Use quando o `.spec-wave.json` estiver desatualizado: repos inicializados por uma versão antiga (sem `etapaFieldId`/`stageOptions`), Project renomeado, ou versão da CLI divergente. Escreve no arquivo **local** — faça commit depois.
 
+### `@spec-wave/cli update` — atualiza tudo que ficou para trás (só o que mudou)
+| Flag | Tipo | Descrição |
+|------|------|-----------|
+| `--global` | flag | Verifica a skill no escopo do usuário (padrão: projeto). |
+| `--skip-skill` / `--skip-config` / `--skip-repo` | flag | Pula a categoria correspondente. |
+| `--dry-run` | flag | Mostra o que seria atualizado sem alterar nada. |
+| `--yes` | flag | Aplica sem pedir confirmação. |
+
+> Detecta e atualiza **somente o que divergiu** da versão atual da CLI: a **skill** instalada (por agente), o **`.spec-wave.json`** local (se versão/formato divergir) e os **workflows/labels** do repo (compara com os templates empacotados). Interativo por padrão (mostra o plano e confirma). É o atalho recomendado após atualizar a CLI.
+
 ### `@spec-wave/cli generate-plan` · `generate-spec` · `validate` · `decompose`
 | Flag | Tipo | Descrição |
 |------|------|-----------|
@@ -172,6 +182,26 @@ Mostra se o repositório atual já foi configurado com o spec-wave.
 3. **Se NÃO estiver inicializado**, pergunte ao usuário: "Este repositório ainda não foi configurado com o spec-wave. Quer rodar o `init` agora?"
    - Se sim → siga o fluxo de `/spec-wave setup`.
    - Se não → encerre sem alterar nada.
+
+---
+
+### `/spec-wave update`
+
+Traz tudo para a versão atual da CLI, atualizando **só o que mudou**: a skill instalada, o `.spec-wave.json` local e os workflows/labels do repo.
+
+**Passos:**
+1. **Sempre comece com `--dry-run`** para inspecionar o que está desatualizado sem alterar nada:
+   ```bash
+   npx @spec-wave/cli update --dry-run
+   ```
+2. Mostre ao usuário o resumo (skill / config / arquivos do repo / labels que divergiram). Se **nada** estiver desatualizado, informe que já está tudo na versão atual e encerre.
+3. Se o usuário aprovar, aplique:
+   ```bash
+   npx @spec-wave/cli update --yes
+   ```
+   - Escopos podem ser limitados com `--skip-skill`, `--skip-config`, `--skip-repo`.
+   - Atualizações de **arquivos do repo** são commitadas no remoto; o **`.spec-wave.json`** é local (lembre o usuário de commitá-lo).
+4. Se a skill foi atualizada, oriente recarregar/reiniciar o agente para pegar a nova versão.
 
 ---
 

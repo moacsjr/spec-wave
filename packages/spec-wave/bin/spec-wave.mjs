@@ -87,6 +87,20 @@ program
   });
 
 program
+  .command('update')
+  .description('Detecta o que está desatualizado (skill, .spec-wave.json, workflows/labels do repo) e atualiza só o que mudou')
+  .option('--global', 'Verifica a skill no escopo do usuário (padrão: projeto)')
+  .option('--skip-skill', 'Não verifica/atualiza a skill instalada')
+  .option('--skip-config', 'Não verifica/atualiza o .spec-wave.json local')
+  .option('--skip-repo', 'Não verifica/atualiza workflows e labels do repo')
+  .option('--dry-run', 'Mostra o que seria atualizado sem alterar nada')
+  .option('--yes', 'Aplica sem pedir confirmação')
+  .action(async (options) => {
+    const { update } = await import('../src/commands/update.mjs');
+    await update(options).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
   .command('install-skill')
   .description('Instala a skill spec-wave no(s) agente(s) detectado(s): Claude Code, Cursor, opencode, Cline, Kilo, Antigravity, AGENTS.md')
   .option('--agent <names>', 'Agente(s) alvo, separados por vírgula (pula a detecção)')
