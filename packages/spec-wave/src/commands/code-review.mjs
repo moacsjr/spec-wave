@@ -54,24 +54,27 @@ async function resolveFeatureIssue(token, owner, repo, issueNumber) {
   return null;
 }
 
-// Coleta a "unidade de review" de uma issue referenciada no PR: a Feature
-// ancestral + a Story + as Tasks dessa Story — tudo anda junto com a Feature.
-// Retorna Map number -> { nodeId, title }.
+// Coleta a "unidade de review" de uma issue referenciada no PR. Separa a
+// Feature dos demais itens, porque a Feature tem regra própria (só avança
+// quando TODAS as suas Stories estiverem em Code Review). Retorna
+// { feature: {number,nodeId,title}|null, items: Map(number -> {nodeId,title}) }
+// onde `items` são as Stories + Tasks que andam juntas neste PR.
 async function collectReviewUnit(token, owner, repo, issueNumber) {
-  const unit = new Map();
-  const add = (n, nodeId, title) => { if (n && nodeId && !unit.has(n)) unit.set(n, { nodeId, title }); };
+  const items = new Map();
+  const add = (n, nodeId, title) => { if (n && nodeId && !items.has(n)) items.set(n, { nodeId, title }); };
 
   let issue;
-  try { issue = await getIssue(token, owner, repo, issueNumber); } catch { return unit; }
+  try { issue = await getIssue(token, owner, repo, issueNumber); } catch { return { feature: null, items }; }
   const type = detectIssueType(issue);
-  if (type !== 'Feature' && type !== 'Story' && type !== 'Task') return unit;
+  if (type !== 'Feature' && type !== 'Story' && type !== 'Task') return { feature: null, items };
 
-  // Feature ancestral (ou a própria).
-  const feature = await resolveFeatureIssue(token, owner, repo, issueNumber);
-  if (feature) add(feature.number, feature.node_id, feature.title);
+  const featureIssue = await resolveFeatureIssue(token, owner, repo, issueNumber);
+  const feature = featureIssue
+    ? { number: featureIssue.number, nodeId: featureIssue.node_id, title: featureIssue.title }
+    : null;
 
   if (type === 'Feature') {
-    // Toda a subárvore da Feature: Stories + Tasks.
+    // Referência direta à Feature: toda a subárvore (Stories + Tasks).
     const stories = await listSubIssues(token, issue.node_id).catch(() => []);
     for (const st of stories) {
       add(st.number, st.nodeId, st.title);
@@ -91,7 +94,24 @@ async function collectReviewUnit(token, owner, repo, issueNumber) {
       for (const t of tasks) add(t.number, t.nodeId, t.title);
     }
   }
-  return unit;
+  return { feature, items };
+}
+
+// A Feature só avança quando TODAS as suas Stories já estiverem em Code Review
+// (ou etapa posterior). readToken lê as issues; projToken opera no Project.
+async function allStoriesReadyForReview(readToken, projToken, project, etapaField, featureNodeId) {
+  if (!etapaField?.id) return true; // sem campo Etapa não há como checar — assume ok
+  const subs = await listSubIssues(readToken, featureNodeId).catch(() => []);
+  const stories = subs.filter(s => detectIssueType({ title: s.title }) === 'Story');
+  if (stories.length === 0) return true;
+  const tgtIdx = STAGE_ORDER.indexOf(CODE_REVIEW_STAGE);
+  for (const st of stories) {
+    const itemId = await addProjectItem(projToken, project.id, st.nodeId);
+    const current = await getItemSingleSelectValue(projToken, itemId, etapaField.id).catch(() => null);
+    const idx = current ? STAGE_ORDER.indexOf(current) : -1;
+    if (idx === -1 || idx < tgtIdx) return false; // há Story pendente
+  }
+  return true;
 }
 
 // Avança um item do board para a Etapa "👀 Code Review" e reinicia o Status
@@ -168,12 +188,14 @@ export async function codeReview({ prNumber }) {
 
   const seen = new Set();
   const updated = [];
+  const featuresChecked = new Set();
 
-  // Para cada issue referenciada, move a unidade inteira (Feature + Story +
-  // Tasks) para Code Review — tudo anda junto com a Feature.
+  // Para cada issue referenciada: move a Story + Tasks para Code Review. A
+  // Feature só avança quando TODAS as suas Stories já estiverem em Code Review.
   for (const num of issueNums) {
-    const unit = await collectReviewUnit(token, owner, repo, num);
-    for (const [n, info] of unit) {
+    const { feature, items } = await collectReviewUnit(token, owner, repo, num);
+
+    for (const [n, info] of items) {
       if (seen.has(n)) continue;
       seen.add(n);
       try {
@@ -188,13 +210,35 @@ export async function codeReview({ prNumber }) {
         console.warn(`Falha ao atualizar #${n}: ${err.message}`);
       }
     }
+
+    // Feature: só avança se todas as suas Stories já estão em Code Review+.
+    if (feature && !featuresChecked.has(feature.number)) {
+      featuresChecked.add(feature.number);
+      try {
+        const ready = await allStoriesReadyForReview(token, projectToken, project, etapaField, feature.nodeId);
+        if (!ready) {
+          console.log(`Feature #${feature.number} mantida em desenvolvimento — ainda há Stories pendentes (fora de "${CODE_REVIEW_STAGE}").`);
+        } else if (!seen.has(feature.number)) {
+          seen.add(feature.number);
+          const moved = await setCodeReview(projectToken, project, etapaField, statusField, feature.nodeId);
+          if (moved) {
+            updated.push(`#${feature.number} ${feature.title} (Feature)`);
+            console.log(`Feature #${feature.number} → "${CODE_REVIEW_STAGE}" (todas as Stories concluídas).`);
+          } else {
+            console.log(`Feature #${feature.number} já está em "${CODE_REVIEW_STAGE}" ou etapa posterior.`);
+          }
+        }
+      } catch (err) {
+        console.warn(`Falha ao avaliar a Feature #${feature.number}: ${err.message}`);
+      }
+    }
   }
 
   if (updated.length > 0) {
     await commentOnIssue(
       token, owner, repo, parseInt(prNumber, 10),
       `🔍 **Code Review iniciado**\n\n` +
-      `Movidos para **${CODE_REVIEW_STAGE}** (Feature + Story + Tasks):\n\n` +
+      `Movidos para **${CODE_REVIEW_STAGE}** (a Feature só avança quando todas as suas Stories concluírem):\n\n` +
       updated.map(f => `- ${f}`).join('\n')
     ).catch(() => {});
   }

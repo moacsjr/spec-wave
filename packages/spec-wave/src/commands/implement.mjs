@@ -26,7 +26,7 @@ async function resolveFeature(token, startNodeId) {
     const parent = await getIssueParent(token, current);
     if (!parent) return null;
     if (detectIssueType({ title: parent.title }) === 'Feature') {
-      return { number: parent.number, title: parent.title };
+      return { number: parent.number, title: parent.title, nodeId: parent.nodeId };
     }
     current = parent.nodeId;
   }
@@ -46,7 +46,7 @@ function readSpecPlan(featureDir) {
 }
 
 // Monta o markdown de contexto que será entregue ao spec-kit implement.
-function buildContext({ type, issue, tasks, feature, spec, plan, specPath, planPath }) {
+function buildContext({ type, issue, tasks, feature, siblingStories = [], spec, plan, specPath, planPath }) {
   const lines = [];
   lines.push(`# Contexto de implementação — ${type} #${issue.number}`);
   lines.push('');
@@ -86,11 +86,19 @@ function buildContext({ type, issue, tasks, feature, spec, plan, specPath, planP
     lines.push('   1. Faça o **commit** de todas as mudanças da implementação.');
     lines.push(`   2. Abra o **Pull Request** da Story #${issue.number}.`);
     lines.push(
-      `   3. **Avance a Etapa — em conjunto — ${feature ? `da Feature #${feature.number}` : 'da Feature (issue pai da Story)'}, ` +
-      `a Story #${issue.number} e todas as ${tasks.length} Task(s) (${tasks.map(t => `#${t.number}`).join(', ')}) ` +
-      `para ${STAGE_CODE_REVIEW}**, e **reinicie o Status de cada um para ${PROGRESS_TODO}**. ` +
-      'Tudo anda junto com a Feature e sempre para frente.'
+      `   3. **Avance a Etapa da Story #${issue.number} e de todas as suas ${tasks.length} Task(s) ` +
+      `(${tasks.map(t => `#${t.number}`).join(', ')}) para ${STAGE_CODE_REVIEW}**, reiniciando o Status ` +
+      `de cada uma para ${PROGRESS_TODO}. (Story e Tasks andam juntas.)`
     );
+    // A Feature só avança quando TODAS as suas Stories estiverem implementadas.
+    lines.push(`   4. **A Feature${feature ? ` #${feature.number}` : ' (issue pai da Story)'} só avança para ${STAGE_CODE_REVIEW} quando TODAS as suas Stories estiverem implementadas:**`);
+    if (siblingStories.length === 0) {
+      lines.push(`      - Esta é a **única Story** da Feature → avance também a Feature${feature ? ` #${feature.number}` : ''} para ${STAGE_CODE_REVIEW} (Status → ${PROGRESS_TODO}).`);
+    } else {
+      lines.push(`      - Outras Stories desta Feature: ${siblingStories.map(s => `#${s.number}`).join(', ')}.`);
+      lines.push(`      - Verifique a Etapa de cada uma. Avance a Feature para ${STAGE_CODE_REVIEW} **somente se TODAS** já estiverem em ${STAGE_CODE_REVIEW} (ou etapa posterior).`);
+      lines.push(`      - Se **qualquer** Story ainda estiver pendente (antes de ${STAGE_CODE_REVIEW}), **NÃO mova a Feature** — deixe-a em ${STAGE_DEVELOPMENT} até a última Story ser concluída.`);
+    }
   } else {
     lines.push(
       `Esta Task #${issue.number} está na Etapa **${STAGE_DEVELOPMENT}**. Acompanhe o progresso pelo ` +
@@ -212,7 +220,7 @@ export async function implement({ issue: issueArg, featureDir: featureDirOpt, dr
   }
 
   // 4. Resolve a Feature (pai na cadeia) — para spec.md/plan.md e para as
-  // instruções de fim de Story (mover Feature + Story para Code Review).
+  // instruções de fim de Story (avançar a Etapa para Code Review).
   const feature = await resolveFeature(token, issue.node_id);
   let featureDir = featureDirOpt;
   if (!featureDir && feature?.title) {
@@ -227,8 +235,19 @@ export async function implement({ issue: issueArg, featureDir: featureDirOpt, dr
     p.log.warn('Não foi possível resolver a Feature; seguindo só com as tasks (use --feature-dir).');
   }
 
+  // 4b. Stories irmãs da Feature — a Feature só avança para Code Review quando
+  // TODAS as suas Stories estiverem implementadas. Lista as outras para o agente
+  // verificar antes de mover a Feature.
+  let siblingStories = [];
+  if (type === 'Story' && feature?.nodeId) {
+    const featureSubs = await listSubIssues(token, feature.nodeId).catch(() => []);
+    siblingStories = featureSubs
+      .filter(s => detectIssueType({ title: s.title }) === 'Story' && s.number !== issue.number)
+      .map(s => ({ number: s.number, title: s.title }));
+  }
+
   // 5. Monta e grava o arquivo de contexto.
-  const context = buildContext({ type, issue, tasks, feature, ...specPlan });
+  const context = buildContext({ type, issue, tasks, feature, siblingStories, ...specPlan });
   mkdirSync(WORK_DIR, { recursive: true });
   const tasksFile = path.join(WORK_DIR, `implement-${issueNumber}.md`);
   writeFileSync(tasksFile, context);
