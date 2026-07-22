@@ -4,7 +4,7 @@ import { resolveToken } from '../api/auth.mjs';
 import { getIssue, getPR, commentOnIssue } from '../api/github-rest.mjs';
 import { addProjectItem, setItemSingleSelect, getSingleSelectField, getIssueParent, listSubIssues, getItemSingleSelectValue } from '../api/github-graphql.mjs';
 import { detectIssueType } from '../lib/issue-type.mjs';
-import { CONFIG_FILE, STATUS_OPTIONS, STAGE_ORDER, STAGE_DONE, PROGRESS_TODO, PROGRESS_DONE } from '../config.mjs';
+import { CONFIG_FILE, STATUS_OPTIONS, STAGE_ORDER, STAGE_DONE, PROGRESS_TODO, PROGRESS_DONE, isManualStageType } from '../config.mjs';
 
 // Ao abrir o PR: Stories/Feature → Etapa "👀 Code Review" (Status "Todo");
 // Tasks → Etapa "🎉 Done" (Status "Done"), pois a implementação da task terminou.
@@ -77,25 +77,29 @@ async function collectReviewUnit(token, owner, repo, issueNumber) {
     ? { number: featureIssue.number, nodeId: featureIssue.node_id, title: featureIssue.title }
     : null;
 
+  // Spikes (tipos manuais) nunca são movidos automaticamente — pulados aqui.
+  const isManual = (sub) => isManualStageType(detectIssueType({ title: sub.title, labels: sub.labels }));
+
   if (type === 'Feature') {
     // Referência direta à Feature: toda a subárvore (Stories + Tasks).
     const subs = await listSubIssues(token, issue.node_id).catch(() => []);
     for (const st of subs) {
+      if (isManual(st)) continue;
       addStory(st.number, st.nodeId, st.title);
       const tks = await listSubIssues(token, st.nodeId).catch(() => []);
-      for (const t of tks) addTask(t.number, t.nodeId, t.title);
+      for (const t of tks) { if (isManual(t)) continue; addTask(t.number, t.nodeId, t.title); }
     }
   } else if (type === 'Story') {
     addStory(issue.number, issue.node_id, issue.title);
     const tks = await listSubIssues(token, issue.node_id).catch(() => []);
-    for (const t of tks) addTask(t.number, t.nodeId, t.title);
+    for (const t of tks) { if (isManual(t)) continue; addTask(t.number, t.nodeId, t.title); }
   } else { // Task → inclui a Story pai e as Tasks irmãs.
     addTask(issue.number, issue.node_id, issue.title);
     const parent = await getIssueParent(token, issue.node_id).catch(() => null);
     if (parent && detectIssueType({ title: parent.title }) === 'Story') {
       addStory(parent.number, parent.nodeId, parent.title);
       const tks = await listSubIssues(token, parent.nodeId).catch(() => []);
-      for (const t of tks) addTask(t.number, t.nodeId, t.title);
+      for (const t of tks) { if (isManual(t)) continue; addTask(t.number, t.nodeId, t.title); }
     }
   }
   return { feature, stories, tasks };

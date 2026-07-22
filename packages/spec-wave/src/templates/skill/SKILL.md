@@ -232,6 +232,8 @@ Crie um work item tipado (Initiative/Epic/Feature/Story/Task/...) já adicionado
 
 **Hierarquia típica:** Initiative → Epic → Feature → Story → Task. A **Initiative** é o nó raiz e agrupa Epics. Use `--parent <n>` para criar como sub-issue do nível acima (ex.: um Epic filho de uma Initiative, ou uma Story filha de uma Feature). O GitHub mostra o parent na issue filha e vice-versa; a CLI ainda grava `Parent: #N` no corpo.
 
+> **Spike é movido manualmente:** o spec-wave **nunca** avança a Etapa de um Spike automaticamente (nem no `implement`, nem nas Actions de Code Review/QA). O Spike entra no board em 📥 Backlog e o **usuário** o move à mão pelas etapas. Não mova a Etapa de um Spike por conta própria — a não ser que o usuário peça explicitamente.
+
 **Passos:**
 1. Pergunte ao usuário: tipo (initiative/epic/feature/story/task/...), título (sem prefixo), descrição e se há uma issue **pai** (número). **Prioridade e área são opcionais**: só as inclua se o usuário pedir explicitamente. **Nunca atribua uma prioridade por conta própria** — se o usuário não informou, **omita `--priority`** e a prioridade fica `null` (sem prioridade) no board.
 2. Execute o comando com os parâmetros coletados (inclua **apenas** as flags que o usuário forneceu):

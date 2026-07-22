@@ -131,6 +131,14 @@ export const WORK_ITEM_TYPES = CUSTOM_FIELDS
   .find(f => f.name === 'Work Item Type')
   .options.map(o => o.name);
 
+// Tipos cujo estágio no board é gerenciado MANUALMENTE: as automações (Actions
+// code-review/qa e o fluxo do implement) NUNCA avançam a Etapa desses itens —
+// o usuário os move à mão. Spike é uma investigação cujo avanço é decisão humana.
+export const MANUAL_STAGE_TYPES = ['Spike'];
+export function isManualStageType(type) {
+  return MANUAL_STAGE_TYPES.includes(type);
+}
+
 export const TYPE_LABELS = [
   { name: '[INITIATIVE]', color: 'C5DEF5', description: 'Agrupamento estratégico de Epics' },
   { name: '[EPIC]',    color: '7B61FF', description: 'Objetivo estratégico'  },
