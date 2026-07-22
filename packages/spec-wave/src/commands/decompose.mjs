@@ -5,7 +5,8 @@ import { getIssue, createIssue, removeLabel, commentOnIssue } from '../api/githu
 import { addSubIssue, addProjectItem, setItemSingleSelect, getSingleSelectField } from '../api/github-graphql.mjs';
 import { generateDocument } from '../lib/claude.mjs';
 import { slugify } from '../lib/slugify.mjs';
-import { CONFIG_FILE } from '../config.mjs';
+import { detectIssueType } from '../lib/issue-type.mjs';
+import { CONFIG_FILE, DECOMPOSE_TARGETS } from '../config.mjs';
 
 const READY_STAGE = 'Todo';
 
@@ -35,7 +36,18 @@ async function moveToStage(token, project, statusField, nodeId, stageName) {
   await setItemSingleSelect(token, project.id, itemId, statusField.id, optionId);
 }
 
-const SYSTEM_PROMPT = `Você é um Tech Lead experiente em decomposição de trabalho ágil.
+// Extrai JSON da resposta do modelo (tolera texto em volta).
+function parseJson(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Claude did not return valid JSON');
+    return JSON.parse(jsonMatch[0]);
+  }
+}
+
+const FEATURE_SYSTEM_PROMPT = `Você é um Tech Lead experiente em decomposição de trabalho ágil.
 A partir da Feature fornecida (com spec.md e plan.md), gere uma lista de Stories e Tasks.
 
 Responda APENAS com JSON válido neste formato:
@@ -63,6 +75,152 @@ Regras:
 - Tasks devem ser atividades técnicas concretas, com "title" curto e "body" detalhado
 - Gere entre 3 e 7 Stories por Feature`;
 
+const RFC_SYSTEM_PROMPT = `Você é um Tech Lead experiente. A partir do RFC fornecido (proposta técnica/de processo), gere a lista de Tasks técnicas concretas necessárias para implementá-lo.
+
+Responda APENAS com JSON válido neste formato:
+{
+  "tasks": [
+    {
+      "title": "Título técnico curto da task (sem prefixo)",
+      "body": "Descrição técnica detalhada (o que fazer, áreas/arquivos afetados, critério de pronto)"
+    }
+  ]
+}
+
+Regras:
+- "title" CURTO (máx. ~60 caracteres), sem prefixo.
+- "body" detalhado e acionável.
+- Gere entre 3 e 10 Tasks concretas que, juntas, cubram o RFC.`;
+
+// Decompõe uma Feature em Stories (+ Tasks), cada uma vinculada como sub-issue.
+async function decomposeFeature(ctx) {
+  const { token, projectToken, owner, repo, issue, issueNumber, project, statusField } = ctx;
+  const slug = slugify(issue.title);
+  const featureDir = `docs/features/${slug}`;
+
+  const planContent = existsSync(`${featureDir}/plan.md`)
+    ? readFileSync(`${featureDir}/plan.md`, 'utf-8')
+    : '(plan.md não encontrado)';
+  const specContent = existsSync(`${featureDir}/spec.md`)
+    ? readFileSync(`${featureDir}/spec.md`, 'utf-8')
+    : '(spec.md não encontrado)';
+
+  console.log(`Decompondo Feature: ${issue.title}`);
+  const userContent = [
+    `Feature: ${issue.title}`,
+    `Issue #${issueNumber}`,
+    `\n## spec.md\n${specContent}`,
+    `\n## plan.md\n${planContent}`,
+  ].join('\n');
+
+  const decomposition = parseJson(await generateDocument(FEATURE_SYSTEM_PROMPT, userContent));
+  const featureNodeId = issue.node_id;
+  const created = [];
+
+  for (const story of decomposition.stories) {
+    console.log(`Criando story: ${story.title}`);
+    const storyTitle = `[STORY] ${story.title}`;
+    const storyBody = [story.userStory, story.body]
+      .map(s => (s || '').trim())
+      .filter(Boolean)
+      .join('\n\n') || '_(sem descrição)_';
+    const createdStory = await createIssue(token, owner, repo, storyTitle, storyBody, ['[STORY]']);
+    created.push({ title: storyTitle, url: createdStory.url });
+
+    try {
+      await addSubIssue(token, featureNodeId, createdStory.nodeId);
+    } catch (err) {
+      console.warn(`  Story #${createdStory.number} criada, mas falhou ao vincular à Feature: ${err.message}`);
+    }
+    try {
+      await moveToStage(projectToken, project, statusField, createdStory.nodeId, READY_STAGE);
+    } catch (err) {
+      console.warn(`  Falha ao mover story #${createdStory.number} para "${READY_STAGE}": ${err.message}`);
+    }
+
+    for (const task of story.tasks || []) {
+      console.log(`  Criando task: ${task.title}`);
+      const taskTitle = `[TASK] ${task.title}`;
+      const taskBody = `${task.body}\n\n_Story pai: ${createdStory.url}_`;
+      const createdTask = await createIssue(token, owner, repo, taskTitle, taskBody, ['[TASK]']);
+      try {
+        await addSubIssue(token, createdStory.nodeId, createdTask.nodeId);
+      } catch (err) {
+        console.warn(`    Task #${createdTask.number} criada, mas falhou ao vincular à Story: ${err.message}`);
+      }
+      try {
+        await moveToStage(projectToken, project, statusField, createdTask.nodeId, READY_STAGE);
+      } catch (err) {
+        console.warn(`    Falha ao mover task #${createdTask.number} para "${READY_STAGE}": ${err.message}`);
+      }
+    }
+  }
+
+  try {
+    await moveToStage(projectToken, project, statusField, featureNodeId, READY_STAGE);
+    if (project?.id && statusField) console.log(`Feature movida para "${READY_STAGE}" no board.`);
+  } catch (err) {
+    console.warn(`Falha ao mover Feature para "${READY_STAGE}": ${err.message}`);
+  }
+
+  await removeLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-wave:decompose');
+  const list = created.map(s => `- ${s.url} — ${s.title}`).join('\n');
+  await commentOnIssue(
+    token, owner, repo, parseInt(issueNumber, 10),
+    `🔀 **Decomposição concluída!**\n\n` +
+    `Foram criados ${decomposition.stories.length} stories e suas tasks:\n\n${list}\n\n` +
+    `Mova o card para **📋 Backlog Técnico** para iniciar o desenvolvimento.`
+  );
+  console.log(`Decomposição concluída: ${decomposition.stories.length} stories criadas.`);
+}
+
+// Decompõe um RFC diretamente em Tasks (sem Stories), cada uma vinculada como
+// sub-issue do RFC.
+async function decomposeRFC(ctx) {
+  const { token, projectToken, owner, repo, issue, issueNumber, project, statusField } = ctx;
+  console.log(`Decompondo RFC: ${issue.title}`);
+
+  const userContent = [
+    `RFC: ${issue.title}`,
+    `Issue #${issueNumber}`,
+    `\n## Descrição\n${issue.body || '(sem descrição)'}`,
+  ].join('\n');
+
+  const decomposition = parseJson(await generateDocument(RFC_SYSTEM_PROMPT, userContent));
+  const rfcNodeId = issue.node_id;
+  const tasks = decomposition.tasks || [];
+  const created = [];
+
+  for (const task of tasks) {
+    console.log(`Criando task: ${task.title}`);
+    const taskTitle = `[TASK] ${task.title}`;
+    const taskBody = `${task.body}\n\n_RFC pai: ${issue.html_url || `#${issueNumber}`}_`;
+    const createdTask = await createIssue(token, owner, repo, taskTitle, taskBody, ['[TASK]']);
+    created.push({ title: taskTitle, url: createdTask.url });
+
+    try {
+      await addSubIssue(token, rfcNodeId, createdTask.nodeId);
+    } catch (err) {
+      console.warn(`  Task #${createdTask.number} criada, mas falhou ao vincular ao RFC: ${err.message}`);
+    }
+    try {
+      await moveToStage(projectToken, project, statusField, createdTask.nodeId, READY_STAGE);
+    } catch (err) {
+      console.warn(`  Falha ao mover task #${createdTask.number} para "${READY_STAGE}": ${err.message}`);
+    }
+  }
+
+  await removeLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-wave:decompose');
+  const list = created.map(t => `- ${t.url} — ${t.title}`).join('\n');
+  await commentOnIssue(
+    token, owner, repo, parseInt(issueNumber, 10),
+    `🔀 **Decomposição do RFC concluída!**\n\n` +
+    `Foram criadas ${created.length} tasks:\n\n${list}\n\n` +
+    `Mova o card para **📋 Backlog Técnico** para iniciar o desenvolvimento.`
+  );
+  console.log(`Decomposição concluída: ${created.length} tasks criadas.`);
+}
+
 export async function decompose({ issueNumber }) {
   const token = await resolveToken();
   // PROJECT_TOKEN deve ter scope "project" para atualizar GitHub Projects v2.
@@ -79,119 +237,32 @@ export async function decompose({ issueNumber }) {
   }
 
   const issue = await getIssue(token, owner, repo, parseInt(issueNumber, 10));
-  const slug = slugify(issue.title);
+  const type = detectIssueType(issue);
 
-  // Carrega projeto e resolve campo Status uma vez (reutilizado em todos os itens).
+  // Só Feature (→ Stories) e RFC (→ Tasks) podem ser decompostos.
+  if (!DECOMPOSE_TARGETS[type]) {
+    console.log(`Issue #${issueNumber} é ${type || 'desconhecido'} — decompose não se aplica.`);
+    await removeLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-wave:decompose');
+    await commentOnIssue(
+      token, owner, repo, parseInt(issueNumber, 10),
+      `ℹ️ **decompose não se aplica a ${type || 'este tipo'}.** ` +
+      `Use em **Features** (gera Stories + Tasks) ou **RFCs** (gera Tasks).`
+    ).catch(() => {});
+    return;
+  }
+
+  // Projeto + campo Status (reutilizado em todos os itens).
   const project = loadProject();
   let statusField = null;
-  if (project?.id && READY_STAGE) {
+  if (project?.id) {
     try {
       statusField = await resolveStatusField(projectToken, project);
     } catch (err) {
       console.warn(`Não foi possível resolver campo Status do board: ${err.message}`);
     }
   }
-  const featureDir = `docs/features/${slug}`;
 
-  const planContent = existsSync(`${featureDir}/plan.md`)
-    ? readFileSync(`${featureDir}/plan.md`, 'utf-8')
-    : '(plan.md não encontrado)';
-
-  const specContent = existsSync(`${featureDir}/spec.md`)
-    ? readFileSync(`${featureDir}/spec.md`, 'utf-8')
-    : '(spec.md não encontrado)';
-
-  console.log(`Decompondo feature: ${issue.title}`);
-
-  const userContent = [
-    `Feature: ${issue.title}`,
-    `Issue #${issueNumber}`,
-    `\n## spec.md\n${specContent}`,
-    `\n## plan.md\n${planContent}`,
-  ].join('\n');
-
-  const raw = await generateDocument(SYSTEM_PROMPT, userContent);
-
-  let decomposition;
-  try {
-    decomposition = JSON.parse(raw);
-  } catch {
-    // Try to extract JSON from the response
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('Claude did not return valid JSON');
-    decomposition = JSON.parse(jsonMatch[0]);
-  }
-
-  // node id da Feature — necessário para vincular as stories como sub-issues.
-  const featureNodeId = issue.node_id;
-
-  const created = [];
-
-  for (const story of decomposition.stories) {
-    console.log(`Criando story: ${story.title}`);
-    const storyTitle = `[STORY] ${story.title}`;
-    // Corpo: user story completa (Como/quero/para) + texto complementar.
-    const storyBody = [story.userStory, story.body]
-      .map(s => (s || '').trim())
-      .filter(Boolean)
-      .join('\n\n') || '_(sem descrição)_';
-    const createdStory = await createIssue(token, owner, repo, storyTitle, storyBody, ['[STORY]']);
-    created.push({ type: 'story', title: storyTitle, url: createdStory.url });
-
-    // Vincula a story como sub-issue da Feature (relação nativa do GitHub).
-    try {
-      await addSubIssue(token, featureNodeId, createdStory.nodeId);
-    } catch (err) {
-      console.warn(`  Story #${createdStory.number} criada, mas falhou ao vincular à Feature: ${err.message}`);
-    }
-
-    // Move story para Ready no board.
-    try {
-      await moveToStage(projectToken, project, statusField, createdStory.nodeId, READY_STAGE);
-    } catch (err) {
-      console.warn(`  Falha ao mover story #${createdStory.number} para "${READY_STAGE}": ${err.message}`);
-    }
-
-    for (const task of story.tasks || []) {
-      console.log(`  Criando task: ${task.title}`);
-      const taskTitle = `[TASK] ${task.title}`;
-      const taskBody = `${task.body}\n\n_Story pai: ${createdStory.url}_`;
-      const createdTask = await createIssue(token, owner, repo, taskTitle, taskBody, ['[TASK]']);
-
-      // Vincula a task como sub-issue da Story.
-      try {
-        await addSubIssue(token, createdStory.nodeId, createdTask.nodeId);
-      } catch (err) {
-        console.warn(`    Task #${createdTask.number} criada, mas falhou ao vincular à Story: ${err.message}`);
-      }
-
-      // Move task para Ready no board.
-      try {
-        await moveToStage(projectToken, project, statusField, createdTask.nodeId, READY_STAGE);
-      } catch (err) {
-        console.warn(`    Falha ao mover task #${createdTask.number} para "${READY_STAGE}": ${err.message}`);
-      }
-    }
-  }
-
-  // Move a própria Feature para Ready no board.
-  try {
-    await moveToStage(projectToken, project, statusField, featureNodeId, READY_STAGE);
-    if (project?.id && statusField) console.log(`Feature movida para "${READY_STAGE}" no board.`);
-  } catch (err) {
-    console.warn(`Falha ao mover Feature para "${READY_STAGE}": ${err.message}`);
-  }
-
-  // Remove trigger label
-  await removeLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-wave:decompose');
-
-  const storyList = created.map(s => `- ${s.url} — ${s.title}`).join('\n');
-  await commentOnIssue(
-    token, owner, repo, parseInt(issueNumber, 10),
-    `🔀 **Decomposição concluída!**\n\n` +
-    `Foram criados ${decomposition.stories.length} stories e suas tasks:\n\n${storyList}\n\n` +
-    `Mova o card para **📋 Backlog Técnico** para iniciar o desenvolvimento.`
-  );
-
-  console.log(`Decomposição concluída: ${decomposition.stories.length} stories criadas.`);
+  const ctx = { token, projectToken, owner, repo, issue, issueNumber, project, statusField };
+  if (type === 'Feature') await decomposeFeature(ctx);
+  else if (type === 'RFC') await decomposeRFC(ctx);
 }

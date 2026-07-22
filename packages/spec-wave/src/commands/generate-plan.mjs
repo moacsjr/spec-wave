@@ -2,6 +2,8 @@ import { execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { resolveToken } from '../api/auth.mjs';
 import { getIssue, removeLabel, commentOnIssue } from '../api/github-rest.mjs';
+import { detectIssueType } from '../lib/issue-type.mjs';
+import { allowsSpecPlan, SPEC_PLAN_EXCLUDED_TYPES } from '../config.mjs';
 import { generateDocument } from '../lib/claude.mjs';
 import { slugify } from '../lib/slugify.mjs';
 import { buildTechContext } from '../lib/tech-context.mjs';
@@ -39,6 +41,20 @@ export async function generatePlan({ issueNumber }) {
 
   console.log(`Buscando issue #${issueNumber}...`);
   const issue = await getIssue(token, owner, repo, parseInt(issueNumber, 10));
+
+  // plan.md é artefato de Feature — não se aplica a Spike/RFC/Bug.
+  const type = detectIssueType(issue);
+  if (!allowsSpecPlan(type)) {
+    console.log(`Issue #${issueNumber} é ${type}: plan.md não é gerado para ${SPEC_PLAN_EXCLUDED_TYPES.join('/')}.`);
+    await removeLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-wave:plan');
+    await commentOnIssue(
+      token, owner, repo, parseInt(issueNumber, 10),
+      `ℹ️ **plan.md não gerado:** o tipo **${type}** não usa spec/plan no fluxo spec-wave ` +
+      `(esses artefatos são exclusivos de Features). Nenhum arquivo foi criado.`
+    ).catch(() => {});
+    return;
+  }
+
   const slug = slugify(issue.title);
   const featureDir = `docs/features/${slug}`;
   const filePath = `${featureDir}/plan.md`;

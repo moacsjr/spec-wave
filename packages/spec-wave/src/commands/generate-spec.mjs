@@ -4,6 +4,8 @@ import { resolveToken } from '../api/auth.mjs';
 import { getIssue, removeLabel, commentOnIssue } from '../api/github-rest.mjs';
 import { generateDocument } from '../lib/claude.mjs';
 import { slugify } from '../lib/slugify.mjs';
+import { detectIssueType } from '../lib/issue-type.mjs';
+import { allowsSpecPlan, SPEC_PLAN_EXCLUDED_TYPES } from '../config.mjs';
 
 const SYSTEM_PROMPT = `Você é um Product Manager experiente. Gere uma especificação funcional (spec.md) completa para a Feature descrita pelo usuário.
 
@@ -39,6 +41,21 @@ export async function generateSpec({ issueNumber }) {
 
   console.log(`Buscando issue #${issueNumber}...`);
   const issue = await getIssue(token, owner, repo, parseInt(issueNumber, 10));
+
+  // spec.md/plan.md são artefatos funcionais de Feature — não se aplicam a
+  // Spike/RFC/Bug. Pula a geração, remove o trigger e avisa na issue.
+  const type = detectIssueType(issue);
+  if (!allowsSpecPlan(type)) {
+    console.log(`Issue #${issueNumber} é ${type}: spec.md não é gerada para ${SPEC_PLAN_EXCLUDED_TYPES.join('/')}.`);
+    await removeLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-wave:spec');
+    await commentOnIssue(
+      token, owner, repo, parseInt(issueNumber, 10),
+      `ℹ️ **spec.md não gerada:** o tipo **${type}** não usa spec/plan no fluxo spec-wave ` +
+      `(esses artefatos são exclusivos de Features). Nenhum arquivo foi criado.`
+    ).catch(() => {});
+    return;
+  }
+
   const slug = slugify(issue.title);
   const featureDir = `docs/features/${slug}`;
   const filePath = `${featureDir}/spec.md`;

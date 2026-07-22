@@ -139,6 +139,19 @@ export function isManualStageType(type) {
   return MANUAL_STAGE_TYPES.includes(type);
 }
 
+// Tipos que NÃO geram spec.md/plan.md (não passam pelo fluxo funcional de Feature).
+export const SPEC_PLAN_EXCLUDED_TYPES = ['Spike', 'RFC', 'Bug'];
+export function allowsSpecPlan(type) {
+  return !SPEC_PLAN_EXCLUDED_TYPES.includes(type);
+}
+
+// Tipos que podem ser decompostos e o que geram:
+//  • Feature → Stories (+ Tasks)   • RFC → Tasks (diretamente, sem Stories)
+export const DECOMPOSE_TARGETS = {
+  Feature: 'stories',
+  RFC: 'tasks',
+};
+
 export const TYPE_LABELS = [
   { name: '[INITIATIVE]', color: 'C5DEF5', description: 'Agrupamento estratégico de Epics' },
   { name: '[EPIC]',    color: '7B61FF', description: 'Objetivo estratégico'  },

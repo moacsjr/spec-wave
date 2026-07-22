@@ -158,6 +158,10 @@ Mesmas flags do `issue` (exceto `--type`, fixo em `feature`). Mantido para o flu
 | `--issue-number <n>` | string (obrigatório) | Número da issue no GitHub. |
 
 > ⚠️ Esses quatro comandos são executados pelos **GitHub Actions** (disparados por labels), **não** pela skill diretamente. Veja a *Regra fundamental*: para gerar plan/spec/decompor, adicione a **label** correspondente — não rode o comando à mão (a não ser para debug local).
+>
+> **Por tipo de issue:**
+> - `generate-spec` / `generate-plan` → **apenas Features**. Para **Spike, RFC e Bug** a geração é **pulada** (o Action remove a label e comenta) — esses tipos não usam spec/plan.
+> - `decompose` → **Feature** (gera Stories + Tasks) e **RFC** (gera **Tasks** diretamente, sem Stories). Para outros tipos, o Action recusa.
 
 ### `@spec-wave/cli implement` — aciona o spec-kit para uma Story ou Task (comando LOCAL)
 | Flag/Arg | Tipo | Descrição |
@@ -269,14 +273,17 @@ Remove a configuração do spec-wave do repositório (labels, arquivos `.github`
 
 Inicia a geração da **especificação funcional** para uma Feature. É o **primeiro** passo do ciclo de documentos (antes do plano técnico).
 
+> **Apenas Features.** spec/plan **não** são gerados para **Spike, RFC ou Bug** — se a label for adicionada a um desses, o Action pula a geração, remove a label e comenta. Não use `/spec-wave spec|plan` nesses tipos.
+
 **Passos:**
-1. Adicione a label de gatilho:
+1. Confirme que a issue é uma **Feature** (spec/plan não se aplicam a Spike/RFC/Bug).
+2. Adicione a label de gatilho:
    ```bash
    gh issue edit <número> --add-label "spec-wave:spec"
    ```
-2. Informe: "Label `spec-wave:spec` adicionada. O GitHub Action `generate-spec.yml` irá gerar o `spec.md` automaticamente."
-3. Após a conclusão, ofereça revisar o spec.md gerado em `docs/features/<slug>/spec.md`.
-4. Próximo passo: gerar o plano técnico — mova para **📋 Plan** e use `/spec-wave plan <número>`.
+3. Informe: "Label `spec-wave:spec` adicionada. O GitHub Action `generate-spec.yml` irá gerar o `spec.md` automaticamente."
+4. Após a conclusão, ofereça revisar o spec.md gerado em `docs/features/<slug>/spec.md`.
+5. Próximo passo: gerar o plano técnico — mova para **📋 Plan** e use `/spec-wave plan <número>`.
 
 ---
 
@@ -372,16 +379,20 @@ Valida que spec.md e plan.md estão completos e a Feature pode avançar.
 
 ### `/spec-wave decompose <número-da-issue>`
 
-Decompõe uma Feature em Stories e Tasks automaticamente.
+Decompõe automaticamente. Aplica-se a **dois tipos**:
+- **Feature** → gera **Stories** (cada uma com suas **Tasks**), a partir de `spec.md` + `plan.md`.
+- **RFC** → gera **Tasks diretamente** (sem Stories), a partir da descrição do RFC.
+
+Para qualquer outro tipo (Spike, Bug, Story, Task, …) o Action **recusa** e comenta.
 
 **Passos:**
-1. Confirme que a Feature está em **✅ Ready** (spec.md e plan.md validados)
+1. Para **Feature**: confirme que está em **✅ Ready** (spec.md e plan.md validados). Para **RFC**: basta a descrição estar completa (RFC não usa spec/plan).
 2. Adicione a label de decomposição:
    ```bash
    gh issue edit <número> --add-label "spec-wave:decompose"
    ```
-3. Informe: "Decomposição iniciada. O workflow gerará Stories e Tasks baseados em spec.md e plan.md."
-4. Após a conclusão, as issues filhas aparecerão como comentário na Feature pai.
+3. Informe: "Decomposição iniciada — Feature gera Stories+Tasks; RFC gera Tasks."
+4. Após a conclusão, as issues filhas aparecerão como comentário na issue pai.
 
 ---
 
