@@ -5,7 +5,18 @@ import { getIssue, removeLabel, commentOnIssue } from '../api/github-rest.mjs';
 import { generateDocument } from '../lib/claude.mjs';
 import { slugify } from '../lib/slugify.mjs';
 import { detectIssueType } from '../lib/issue-type.mjs';
-import { allowsSpecPlan, SPEC_PLAN_EXCLUDED_TYPES } from '../config.mjs';
+import { allowsSpecPlan, SPEC_PLAN_EXCLUDED_TYPES, TARGET_LANGUAGE } from '../config.mjs';
+
+// Aviso anexado ao comentário quando o lint de idioma ainda reprova após o
+// retry automático do generateDocument (excertos ao redor de cada vazamento).
+function formatLintWarning(lintFindings) {
+  if (!lintFindings || lintFindings.length === 0) return '';
+  const excerpts = lintFindings
+    .slice(0, 5)
+    .map(f => `\`${f.excerpt.replace(/\s+/g, ' ').trim()}\``)
+    .join(', ');
+  return `\n\n⚠️ possíveis artefatos de idioma no documento: ${excerpts}`;
+}
 
 const SYSTEM_PROMPT = `Você é um Product Manager experiente. Gere uma especificação funcional (spec.md) completa para a Feature descrita pelo usuário.
 
@@ -74,7 +85,11 @@ export async function generateSpec({ issueNumber }) {
   const userContent = `Gere o spec.md a partir deste payload JSON:\n\n${JSON.stringify(payload, null, 2)}`;
 
   console.log(`Gerando spec.md para: ${issue.title}`);
-  const content = await generateDocument(SYSTEM_PROMPT, userContent);
+  const { content, lintFindings } = await generateDocument(SYSTEM_PROMPT, userContent, {
+    action: 'spec',
+    lint: { lang: TARGET_LANGUAGE },
+    withReport: true,
+  });
 
   mkdirSync(featureDir, { recursive: true });
   writeFileSync(filePath, content, 'utf-8');
@@ -97,7 +112,8 @@ export async function generateSpec({ issueNumber }) {
     `📋 **spec.md gerado automaticamente!**\n\n` +
     `📄 Arquivo: [\`${filePath}\`](https://github.com/${owner}/${repo}/blob/main/${filePath})\n\n` +
     `Revise a especificação e, quando estiver pronto, gere o plano técnico: mova o card para **📋 Plan** ou use:\n` +
-    `\`\`\`\ngh issue edit ${issueNumber} --add-label "spec-wave:plan"\n\`\`\``
+    `\`\`\`\ngh issue edit ${issueNumber} --add-label "spec-wave:plan"\n\`\`\`` +
+    formatLintWarning(lintFindings)
   );
 
   console.log(`spec.md criado em: ${filePath}`);

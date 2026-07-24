@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { upsertFile, getFileContent, isRepoInitialized } from '../api/github-rest.mjs';
+import { WORKFLOW_FILES } from '../config.mjs';
 
 const __dir = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = path.join(__dir, '..', 'templates');
@@ -22,6 +23,8 @@ export async function setupFiles(token, owner, repo, spinner) {
     );
   }
 
+  // Workflows vêm de WORKFLOW_FILES (config.mjs, fonte única) — adicionar um
+  // workflow novo lá basta para o init (e o update) instalarem.
   const filesToCreate = [
     {
       path: '.github/ISSUE_TEMPLATE/plan-template.md',
@@ -33,26 +36,11 @@ export async function setupFiles(token, owner, repo, spinner) {
       content: readTemplate('issue', 'spec-template.md'),
       message: 'chore: add spec.md issue template [spec-wave]',
     },
-    {
-      path: '.github/workflows/generate-plan.yml',
-      content: readTemplate('workflows', 'generate-plan.yml'),
-      message: 'chore: add generate-plan workflow [spec-wave]',
-    },
-    {
-      path: '.github/workflows/generate-spec.yml',
-      content: readTemplate('workflows', 'generate-spec.yml'),
-      message: 'chore: add generate-spec workflow [spec-wave]',
-    },
-    {
-      path: '.github/workflows/validate.yml',
-      content: readTemplate('workflows', 'validate.yml'),
-      message: 'chore: add validate workflow [spec-wave]',
-    },
-    {
-      path: '.github/workflows/decompose.yml',
-      content: readTemplate('workflows', 'decompose.yml'),
-      message: 'chore: add decompose workflow [spec-wave]',
-    },
+    ...WORKFLOW_FILES.map((file) => ({
+      path: `.github/workflows/${file}`,
+      content: readTemplate('workflows', file),
+      message: `chore: add ${file.replace(/\.yml$/, '')} workflow [spec-wave]`,
+    })),
   ];
 
   for (let i = 0; i < filesToCreate.length; i++) {

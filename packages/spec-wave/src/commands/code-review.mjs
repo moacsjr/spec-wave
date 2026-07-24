@@ -2,8 +2,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { resolveToken } from '../api/auth.mjs';
 import { getIssue, getPR, commentOnIssue } from '../api/github-rest.mjs';
-import { addProjectItem, setItemSingleSelect, getSingleSelectField, getIssueParent, listSubIssues, getItemSingleSelectValue } from '../api/github-graphql.mjs';
+import { addProjectItem, getIssueParent, listSubIssues, getItemSingleSelectValue } from '../api/github-graphql.mjs';
 import { detectIssueType } from '../lib/issue-type.mjs';
+import { loadProjectConfig, resolveField, advanceToStage } from '../lib/board.mjs';
 import { CONFIG_FILE, STATUS_OPTIONS, STAGE_ORDER, STAGE_DONE, PROGRESS_TODO, PROGRESS_DONE, isManualStageType } from '../config.mjs';
 
 // Ao abrir o PR: Stories/Feature → Etapa "👀 Code Review" (Status "Todo");
@@ -23,15 +24,6 @@ function extractIssueNumbers(body) {
     if (n) nums.add(n);
   }
   return [...nums];
-}
-
-// Resolve o campo SINGLE_SELECT pelo nome: usa .spec-wave.json, legado ou API.
-async function resolveField(token, project, name) {
-  if (project.fields?.[name]) return project.fields[name];
-  if (name === 'Etapa' && project.etapaFieldId) {
-    return { id: project.etapaFieldId, options: project.stageOptions || {} };
-  }
-  return await getSingleSelectField(token, project.id, name);
 }
 
 // A partir de qualquer issue (Feature/Story/Task), sobe a hierarquia e retorna a Feature.
@@ -122,30 +114,6 @@ async function allStoriesReadyForReview(readToken, projToken, project, etapaFiel
   return true;
 }
 
-// Avança um item do board para `targetStage` (Etapa) e define o Status para
-// `targetStatus`. Uma issue só AVANÇA: se já estiver em `targetStage` ou em uma
-// etapa posterior, não é tocada (retorna false). Retorna true se avançou.
-async function advanceToStage(token, project, etapaField, statusField, nodeId, targetStage, targetStatus) {
-  const itemId = await addProjectItem(token, project.id, nodeId);
-
-  if (etapaField?.id && targetStage) {
-    // Nunca retroceder: compara a etapa atual com a de destino na ordem canônica.
-    const current = await getItemSingleSelectValue(token, itemId, etapaField.id).catch(() => null);
-    const curIdx = current ? STAGE_ORDER.indexOf(current) : -1;
-    const tgtIdx = STAGE_ORDER.indexOf(targetStage);
-    if (curIdx !== -1 && tgtIdx !== -1 && curIdx >= tgtIdx) {
-      return false; // já está nessa etapa ou adiante — não retrocede
-    }
-    const optionId = etapaField.options?.[targetStage];
-    if (optionId) await setItemSingleSelect(token, project.id, itemId, etapaField.id, optionId);
-  }
-  if (statusField?.id && targetStatus) {
-    const optionId = statusField.options?.[targetStatus];
-    if (optionId) await setItemSingleSelect(token, project.id, itemId, statusField.id, optionId);
-  }
-  return true;
-}
-
 export async function codeReview({ prNumber }) {
   const token = await resolveToken();
   const projectToken = process.env.PROJECT_TOKEN || token;
@@ -172,20 +140,9 @@ export async function codeReview({ prNumber }) {
   }
 
   // Carrega projeto do .spec-wave.json
-  const configPath = path.join(process.cwd(), CONFIG_FILE);
-  if (!existsSync(configPath)) {
-    console.warn(`${CONFIG_FILE} não encontrado — board não atualizado.`);
-    return;
-  }
-  let project;
-  try {
-    project = JSON.parse(readFileSync(configPath, 'utf-8')).project || {};
-  } catch (err) {
-    console.warn(`${CONFIG_FILE} corrompido (${err.message}) — board não atualizado.`);
-    return;
-  }
-  if (!project.id) {
-    console.warn(`Project não configurado em ${CONFIG_FILE} — board não atualizado.`);
+  const { project, error: projectError } = loadProjectConfig();
+  if (projectError) {
+    console.warn(`${projectError} — board não atualizado.`);
     return;
   }
 

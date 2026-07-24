@@ -32,6 +32,16 @@ export const AI_PROVIDERS = [
 
 export const DEFAULT_PROVIDER = 'anthropic';
 
+// Ações de IA que podem ter modelo próprio no .spec-wave.json (bloco
+// `ai.models`, ex.: { "critique": "claude-opus-4-1" }). Resolvidas em runtime
+// por resolveAiConfig() em src/lib/claude.mjs.
+export const AI_ACTIONS = ['spec', 'plan', 'decompose', 'critique'];
+
+// Idioma-alvo de todos os documentos gerados por IA (spec/plan/decompose/critique).
+// Usado pelo lint de saída (src/lib/output-lint.mjs) para detectar vazamento
+// de caracteres de outros alfabetos.
+export const TARGET_LANGUAGE = 'pt-BR';
+
 export function getProvider(value) {
   return AI_PROVIDERS.find(p => p.value === value);
 }
@@ -170,12 +180,18 @@ export const PRIORITY_LABELS = [
   { name: 'P3', color: 'EDEDED', description: 'Baixa'    },
 ];
 
+// Labels de estado gravadas pelas automações (não são gatilhos do usuário).
+export const LABEL_CRITIQUE_FAILED = 'spec-wave:critique-failed';
+export const LABEL_DECOMPOSED = 'spec-wave:decomposed';
+
 export const TRIGGER_LABELS = [
   { name: 'spec-wave:spec',          color: 'BFD4F2', description: 'Gerar spec.md via GitHub Action'      },
   { name: 'spec-wave:plan',          color: 'BFD4F2', description: 'Gerar plan.md via GitHub Action'      },
   { name: 'spec-wave:ready',         color: '0E8A16', description: 'Validar spec+plan e mover para Ready'  },
   { name: 'spec-wave:plan-approved', color: '0E8A16', description: 'Spec+plan validados com sucesso'       },
   { name: 'spec-wave:decompose',     color: 'BFD4F2', description: 'Decompor em Stories e Tasks'          },
+  { name: LABEL_CRITIQUE_FAILED,     color: 'B60205', description: 'Crítica adversarial apontou contradições graves' },
+  { name: LABEL_DECOMPOSED,          color: 'EDEDED', description: 'Feature já decomposta em Stories e Tasks' },
 ];
 
 export const ALL_LABELS = [...TYPE_LABELS, ...PRIORITY_LABELS, ...TRIGGER_LABELS];

@@ -1,12 +1,24 @@
 import { execSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { resolveToken } from '../api/auth.mjs';
-import { getIssue, removeLabel, commentOnIssue } from '../api/github-rest.mjs';
+import { getIssue, removeLabel, addLabel, commentOnIssue } from '../api/github-rest.mjs';
 import { detectIssueType } from '../lib/issue-type.mjs';
-import { allowsSpecPlan, SPEC_PLAN_EXCLUDED_TYPES } from '../config.mjs';
+import { allowsSpecPlan, SPEC_PLAN_EXCLUDED_TYPES, TARGET_LANGUAGE, LABEL_CRITIQUE_FAILED } from '../config.mjs';
 import { generateDocument } from '../lib/claude.mjs';
+import { runCritique } from '../lib/critique.mjs';
 import { slugify } from '../lib/slugify.mjs';
 import { buildTechContext } from '../lib/tech-context.mjs';
+
+// Aviso anexado ao comentário quando o lint de idioma ainda reprova após o
+// retry automático do generateDocument (excertos ao redor de cada vazamento).
+function formatLintWarning(lintFindings) {
+  if (!lintFindings || lintFindings.length === 0) return '';
+  const excerpts = lintFindings
+    .slice(0, 5)
+    .map(f => `\`${f.excerpt.replace(/\s+/g, ' ').trim()}\``)
+    .join(', ');
+  return `\n\n⚠️ possíveis artefatos de idioma no documento: ${excerpts}`;
+}
 
 const SYSTEM_PROMPT = `Você é um Tech Lead experiente. Gere um plano técnico (plan.md) completo e detalhado, baseado ESTRITAMENTE no spec.md fornecido.
 
@@ -80,7 +92,11 @@ export async function generatePlan({ issueNumber }) {
   const userContent = `Gere o plan.md a partir deste payload JSON:\n\n${JSON.stringify(payload, null, 2)}`;
 
   console.log(`Gerando plan.md para: ${issue.title}`);
-  const content = await generateDocument(SYSTEM_PROMPT, userContent);
+  const { content, lintFindings } = await generateDocument(SYSTEM_PROMPT, userContent, {
+    action: 'plan',
+    lint: { lang: TARGET_LANGUAGE },
+    withReport: true,
+  });
 
   mkdirSync(featureDir, { recursive: true });
   writeFileSync(filePath, content, 'utf-8');
@@ -103,8 +119,31 @@ export async function generatePlan({ issueNumber }) {
     `📋 **plan.md gerado automaticamente!**\n\n` +
     `📄 Arquivo: [\`${filePath}\`](https://github.com/${owner}/${repo}/blob/main/${filePath})\n\n` +
     `Revise o plano e, quando estiver pronto, valide a Feature: mova o card para **✅ Ready** ou use:\n` +
-    `\`\`\`\ngh issue edit ${issueNumber} --add-label "spec-wave:ready"\n\`\`\``
+    `\`\`\`\ngh issue edit ${issueNumber} --add-label "spec-wave:ready"\n\`\`\`` +
+    formatLintWarning(lintFindings)
   );
+
+  // Crítica adversarial: audita o plan recém-comitado contra spec +
+  // tech_context. NUNCA desfaz o plan — falha da crítica vira só um aviso.
+  try {
+    const critique = await runCritique({
+      kind: 'plan',
+      spec: specContent,
+      plan: content,
+      techContextYaml: tech.yaml,
+    });
+    await commentOnIssue(token, owner, repo, parseInt(issueNumber, 10), critique.markdown);
+    if (critique.grave) {
+      await addLabel(token, owner, repo, parseInt(issueNumber, 10), LABEL_CRITIQUE_FAILED);
+      console.log(`Crítica adversarial apontou findings GRAVES — label ${LABEL_CRITIQUE_FAILED} aplicada.`);
+    }
+  } catch (err) {
+    console.warn(`Crítica adversarial indisponível: ${err.message}`);
+    await commentOnIssue(
+      token, owner, repo, parseInt(issueNumber, 10),
+      `⚠️ crítica adversarial indisponível (erro: ${err.message})`
+    ).catch(() => {});
+  }
 
   console.log(`plan.md criado em: ${filePath}`);
 }

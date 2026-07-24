@@ -2,11 +2,37 @@ import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { CONFIG_FILE, getProvider, DEFAULT_PROVIDER } from '../config.mjs';
+import { lintLanguage } from './output-lint.mjs';
+
+/**
+ * Resolve provider/modelo de IA (função PURA — testável sem process.env nem fs).
+ *
+ * Precedência do modelo: env.SPEC_WAVE_MODEL → fileAi.models[action] →
+ * fileAi.model → default do provider. Provider: env.SPEC_WAVE_PROVIDER →
+ * fileAi.provider → default. Assim uma ação específica (ex.: critique) pode
+ * usar modelo próprio via bloco `ai.models` do .spec-wave.json.
+ *
+ * @param {object} params
+ * @param {object} [params.env] objeto tipo process.env
+ * @param {object} [params.fileAi] bloco `ai` do .spec-wave.json
+ * @param {string} [params.action] ação de IA (ver AI_ACTIONS em config.mjs)
+ * @returns {{ provider: string, model: string, secret: string }}
+ */
+export function resolveAiConfig({ env = {}, fileAi = {}, action } = {}) {
+  const provider = (env.SPEC_WAVE_PROVIDER || fileAi.provider || DEFAULT_PROVIDER).toLowerCase();
+  const meta = getProvider(provider) || getProvider(DEFAULT_PROVIDER);
+  const model = env.SPEC_WAVE_MODEL
+    || (action && fileAi.models?.[action])
+    || fileAi.model
+    || meta.defaultModel;
+  return { provider: meta.value, model, secret: meta.secret };
+}
 
 // Resolve o provider/modelo de IA a partir do .spec-wave.json (gravado pelo init
 // e versionado no repo) com precedência para variáveis de ambiente — assim os
 // workflows usam exatamente o que foi escolhido no init, sem depender de flags.
-function resolveAi() {
+// Wrapper fino: lê o arquivo e delega a decisão à resolveAiConfig (pura).
+function resolveAi(action) {
   let fileAi = {};
   try {
     const configPath = path.join(process.cwd(), CONFIG_FILE);
@@ -16,28 +42,62 @@ function resolveAi() {
   } catch {
     // config ausente/corrompido → cai nos defaults/env
   }
-
-  const provider = (process.env.SPEC_WAVE_PROVIDER || fileAi.provider || DEFAULT_PROVIDER).toLowerCase();
-  const meta = getProvider(provider) || getProvider(DEFAULT_PROVIDER);
-  const model = process.env.SPEC_WAVE_MODEL || fileAi.model || meta.defaultModel;
-  return { provider: meta.value, model, secret: meta.secret };
+  return resolveAiConfig({ env: process.env, fileAi, action });
 }
 
 // temperature padrão 0.2 (RFC-002 §5): "Determinism over Creativity". Pode ser
 // sobrescrita por chamada via opts, mas o default cobre spec/plan/decompose.
+//
+// opts:
+//  • action: ação de IA ('spec'|'plan'|'decompose'|'critique') — permite modelo
+//    por ação via `ai.models` do .spec-wave.json;
+//  • lint: { lang } — após gerar, roda lintLanguage no resultado; se reprovar,
+//    RE-GERA uma única vez com instrução de idioma reforçada; se reprovar de
+//    novo, segue com o conteúdo e reporta os findings;
+//  • withReport: true → retorna { content, lintFindings, retried } em vez da
+//    string (o retorno string é mantido para os chamadores existentes).
 export async function generateDocument(systemPrompt, userContent, opts = {}) {
-  const ai = resolveAi();
+  const ai = resolveAi(opts.action);
   const temperature = opts.temperature ?? 0.2;
   // Modelos de reasoning (ex.: deepseek-r1) consomem tokens "pensando" antes da
   // resposta, então o teto precisa ser maior para o plano não vir truncado.
   const maxTokens = opts.maxTokens ?? 8192;
   console.log(`Provider de IA: ${ai.provider} · modelo: ${ai.model} · temperature: ${temperature} · max_tokens: ${maxTokens}`);
 
-  const raw = ai.provider === 'openrouter'
-    ? await generateWithOpenRouter(systemPrompt, userContent, ai, temperature, maxTokens)
-    : await generateWithAnthropic(systemPrompt, userContent, ai, temperature, maxTokens);
+  const generate = async (system) => {
+    const raw = ai.provider === 'openrouter'
+      ? await generateWithOpenRouter(system, userContent, ai, temperature, maxTokens)
+      : await generateWithAnthropic(system, userContent, ai, temperature, maxTokens);
+    return stripOuterFence(raw);
+  };
 
-  return stripOuterFence(raw);
+  let content = await generate(systemPrompt);
+  let lintFindings = [];
+  let retried = false;
+
+  if (opts.lint) {
+    const lang = opts.lint.lang || 'pt-BR';
+    const allowlist = opts.lint.allowlist || [];
+    let result = lintLanguage(content, { lang, allowlist });
+    if (!result.ok) {
+      // Uma única nova tentativa, com a instrução de idioma reforçada no system
+      // prompt — cobre o caso de modelos que vazam caracteres CJK/cirílicos.
+      retried = true;
+      console.warn(`Lint de idioma reprovou a saída (${result.findings.length} ocorrência(s)) — re-gerando com instrução reforçada.`);
+      const reinforced = systemPrompt +
+        `\n\nIMPORTANTE: responda exclusivamente em ${lang}. ` +
+        'Não use caracteres de outros alfabetos (CJK, cirílico, árabe, tailandês).';
+      content = await generate(reinforced);
+      result = lintLanguage(content, { lang, allowlist });
+      if (!result.ok) {
+        // Segue com o conteúdo mesmo assim; o chamador decide o que fazer.
+        console.warn(`Lint de idioma reprovou novamente (${result.findings.length} ocorrência(s)) — seguindo com o conteúdo gerado.`);
+        lintFindings = result.findings;
+      }
+    }
+  }
+
+  return opts.withReport ? { content, lintFindings, retried } : content;
 }
 
 // Remove blocos de raciocínio que alguns modelos (ex.: deepseek-r1) embutem no

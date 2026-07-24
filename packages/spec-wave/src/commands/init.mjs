@@ -9,7 +9,7 @@ import { setupProject } from '../setup/project.mjs';
 import { setupLabels } from '../setup/labels.mjs';
 import { setupFiles } from '../setup/files.mjs';
 import { getFileContent } from '../api/github-rest.mjs';
-import { CONFIG_FILE, AI_PROVIDERS, getProvider, DEFAULT_PROVIDER, PORTAL_URL } from '../config.mjs';
+import { CONFIG_FILE, AI_PROVIDERS, getProvider, DEFAULT_PROVIDER, PORTAL_URL, WORKFLOW_FILES, ISSUE_TEMPLATE_FILES } from '../config.mjs';
 
 const __dir = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.join(__dir, '..', '..', 'package.json'), 'utf-8'));
@@ -160,7 +160,7 @@ export async function init(options) {
     filesSpinner.start('Criando arquivos no repositório...');
     try {
       await setupFiles(token, owner, repo, filesSpinner);
-      filesSpinner.stop('Arquivos criados (4 workflows + 2 issue templates)');
+      filesSpinner.stop(`Arquivos criados (${WORKFLOW_FILES.length} workflows + ${ISSUE_TEMPLATE_FILES.length} issue templates)`);
     } catch (err) {
       filesSpinner.stop('');
       p.log.error(`Erro ao criar arquivos: ${err.message}`);

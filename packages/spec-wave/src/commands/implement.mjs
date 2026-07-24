@@ -8,10 +8,12 @@ import {
   CONFIG_FILE, STAGE_DEVELOPMENT, STAGE_CODE_REVIEW, STAGE_DONE,
   PROGRESS_TODO, PROGRESS_IN_PROGRESS, PROGRESS_DONE,
 } from '../config.mjs';
-import { getIssue } from '../api/github-rest.mjs';
+import { getIssue, listIssueComments, listBlockedBy } from '../api/github-rest.mjs';
 import { listSubIssues, getIssueParent } from '../api/github-graphql.mjs';
 import { detectIssueType } from '../lib/issue-type.mjs';
 import { slugify } from '../lib/slugify.mjs';
+import { parseDependencies } from '../lib/dependencies.mjs';
+import { extractPathsFromPlan, buildCodeDigest } from '../lib/code-digest.mjs';
 
 // Diretório onde montamos o arquivo de contexto entregue ao spec-kit.
 const WORK_DIR = '.spec-wave';
@@ -46,7 +48,10 @@ function readSpecPlan(featureDir) {
 }
 
 // Monta o markdown de contexto que será entregue ao spec-kit implement.
-function buildContext({ type, issue, tasks, feature, siblingStories = [], spec, plan, specPath, planPath }) {
+function buildContext({
+  type, issue, tasks, feature, siblingStories = [], spec, plan, specPath, planPath,
+  comments = [], codeDigest = null, blockedByWarnings = [],
+}) {
   const lines = [];
   lines.push(`# Contexto de implementação — ${type} #${issue.number}`);
   lines.push('');
@@ -54,6 +59,19 @@ function buildContext({ type, issue, tasks, feature, siblingStories = [], spec, 
   if (issue.body && issue.body.trim()) {
     lines.push('');
     lines.push(issue.body.trim());
+  }
+
+  // Dependências ainda abertas — logo após o cabeçalho, para máxima visibilidade.
+  if (blockedByWarnings.length > 0) {
+    lines.push('');
+    lines.push('## ⚠️ Dependências pendentes');
+    lines.push('');
+    for (const w of blockedByWarnings) lines.push(`- ${w}`);
+    lines.push('');
+    lines.push(
+      '**Implemente somente se tiver certeza de que a dependência não é bloqueante; ' +
+      'caso contrário, pare e reporte.**'
+    );
   }
 
   // Modelo do board: "Etapa" (coluna do kanban) = DIREÇÃO, só avança; "Status"
@@ -119,6 +137,42 @@ function buildContext({ type, issue, tasks, feature, siblingStories = [], spec, 
     lines.push(`### ${i + 1}. #${t.number} ${t.title}`);
     if (t.body && t.body.trim()) lines.push(t.body.trim());
   });
+
+  // Comentários das issues — é onde vivem as revisões/correções feitas depois
+  // que spec/plan/stories foram escritos; em conflito, o comentário vence.
+  if (comments.length > 0) {
+    lines.push('');
+    lines.push('## Comentários das issues (revisões e correções)');
+    lines.push('');
+    lines.push(
+      '> Comentários frequentemente **corrigem ou substituem** instruções dos documentos ' +
+      'acima — em caso de conflito, o comentário mais recente prevalece.'
+    );
+    for (const group of comments) {
+      lines.push('');
+      lines.push(`### Comentários da ${group.kind} #${group.issueNumber}`);
+      if (group.total > group.items.length) {
+        lines.push('');
+        lines.push(`_(mostrando os ${group.items.length} mais recentes de ${group.total})_`);
+      }
+      for (const c of group.items) {
+        lines.push('');
+        lines.push(`**${c.author || 'desconhecido'}** (${c.createdAt}):`);
+        lines.push('');
+        lines.push(c.body.trim());
+      }
+    }
+  }
+
+  // Estado atual do código — evita reimplementar módulos que já existem.
+  if (codeDigest) {
+    lines.push('');
+    lines.push('## Estado atual do código');
+    lines.push('');
+    lines.push('> **NÃO reimplemente o que já existe; estenda os módulos listados abaixo.**');
+    lines.push('');
+    lines.push(codeDigest.trim());
+  }
 
   if (spec) {
     lines.push('');
@@ -241,8 +295,69 @@ export async function implement({ issue: issueArg, featureDir: featureDirOpt, dr
       .map(s => ({ number: s.number, title: s.title }));
   }
 
+  // 4c. Comentários das issues (best-effort) — revisões e correções vivem nos
+  // comentários, não no body; sem eles o agente implementa instruções já
+  // corrigidas. Feature primeiro (correções de escopo), depois a issue-alvo.
+  const MAX_COMMENTS_PER_ISSUE = 15;
+  const MAX_COMMENT_CHARS = 2000;
+  const comments = [];
+  const commentSources = [];
+  if (feature && feature.number !== issue.number) {
+    commentSources.push({ number: feature.number, kind: 'Feature' });
+  }
+  commentSources.push({ number: issue.number, kind: type });
+  for (const src of commentSources) {
+    const all = await listIssueComments(token, owner, repo, src.number).catch(() => []);
+    if (all.length === 0) continue;
+    const items = all.slice(-MAX_COMMENTS_PER_ISSUE).map(c => ({
+      ...c,
+      body: c.body.length > MAX_COMMENT_CHARS
+        ? `${c.body.slice(0, MAX_COMMENT_CHARS)}…[truncado]`
+        : c.body,
+    }));
+    comments.push({ issueNumber: src.number, kind: src.kind, total: all.length, items });
+  }
+
+  // 4d. Digest do estado do código (best-effort) — commits desde a criação da
+  // Feature + árvore dos módulos citados no plan, para o agente estender o que
+  // já existe em vez de reimplementar.
+  let codeDigest = null;
+  try {
+    let sinceIso = issue.created_at || null;
+    if (feature?.number) {
+      const featureIssue = await getIssue(token, owner, repo, feature.number).catch(() => null);
+      if (featureIssue?.created_at) sinceIso = featureIssue.created_at;
+    }
+    const paths = specPlan.plan ? extractPathsFromPlan(specPlan.plan) : [];
+    codeDigest = await buildCodeDigest({ sinceIso, paths });
+  } catch {
+    codeDigest = null;
+  }
+
+  // 4e. Dependências pendentes (best-effort) — une a linha "Depende de:" do
+  // body com a relação nativa blocked_by do GitHub; considera pendente toda
+  // dependência ainda não fechada.
+  const blockedByWarnings = [];
+  try {
+    const depNumbers = new Set(parseDependencies(issue.body));
+    const blocked = await listBlockedBy(token, owner, repo, issue.number).catch(() => []);
+    for (const b of blocked) depNumbers.add(b.number);
+    for (const depNumber of [...depNumbers].sort((a, b) => a - b)) {
+      const dep = await getIssue(token, owner, repo, depNumber).catch(() => null);
+      if (!dep || dep.state === 'closed') continue;
+      const warning =
+        `${type} #${issue.number} depende de #${depNumber} («${dep.title}»), ` +
+        `que ainda não está concluída (state: ${dep.state}).`;
+      blockedByWarnings.push(warning);
+      p.log.warn(warning);
+    }
+  } catch { /* aviso é best-effort — segue sem ele */ }
+
   // 5. Monta e grava o arquivo de contexto.
-  const context = buildContext({ type, issue, tasks, feature, siblingStories, ...specPlan });
+  const context = buildContext({
+    type, issue, tasks, feature, siblingStories, ...specPlan,
+    comments, codeDigest, blockedByWarnings,
+  });
   mkdirSync(WORK_DIR, { recursive: true });
   const tasksFile = path.join(WORK_DIR, `implement-${issueNumber}.md`);
   writeFileSync(tasksFile, context);

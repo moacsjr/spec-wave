@@ -87,10 +87,12 @@ export async function upsertFile(token, owner, repo, path, content, message) {
   });
 }
 
+// `id` é o database id da issue — exigido pela API de dependências
+// (blocked_by), que não aceita number nem node id.
 export async function createIssue(token, owner, repo, title, body, labels) {
   const octokit = makeOctokit(token);
   const res = await octokit.rest.issues.create({ owner, repo, title, body, labels });
-  return { number: res.data.number, nodeId: res.data.node_id, url: res.data.html_url };
+  return { number: res.data.number, nodeId: res.data.node_id, url: res.data.html_url, id: res.data.id };
 }
 
 export async function getIssue(token, owner, repo, issueNumber) {
@@ -146,6 +148,48 @@ export async function removeLabel(token, owner, repo, issueNumber, labelName) {
   } catch (err) {
     if (err.status !== 404) throw err;
   }
+}
+
+// Lista todos os comentários de uma issue/PR: [{ author, body, createdAt }].
+// Paginado — traz o histórico completo (usado pela crítica adversarial).
+export async function listIssueComments(token, owner, repo, issueNumber) {
+  const octokit = makeOctokit(token);
+  const comments = await octokit.paginate(octokit.rest.issues.listComments, {
+    owner,
+    repo,
+    issue_number: issueNumber,
+    per_page: 100,
+  });
+  return comments.map(c => ({
+    author: c.user?.login || '',
+    body: c.body || '',
+    createdAt: c.created_at,
+  }));
+}
+
+// Marca uma issue como bloqueada por outra (relação nativa do GitHub).
+// `blockingIssueId` é o DATABASE id da issue bloqueadora (não o number nem o
+// node id — ver createIssue). Erros propagam: o chamador usa como fallback.
+export async function addBlockedBy(token, owner, repo, issueNumber, blockingIssueId) {
+  const octokit = makeOctokit(token);
+  await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by', {
+    owner,
+    repo,
+    issue_number: issueNumber,
+    issue_id: blockingIssueId,
+  });
+}
+
+// Lista as issues que bloqueiam `issueNumber`: [{ number, title, state, id }].
+export async function listBlockedBy(token, owner, repo, issueNumber) {
+  const octokit = makeOctokit(token);
+  const issues = await octokit.paginate('GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by', {
+    owner,
+    repo,
+    issue_number: issueNumber,
+    per_page: 100,
+  });
+  return issues.map(i => ({ number: i.number, title: i.title, state: i.state, id: i.id }));
 }
 
 export async function commentOnIssue(token, owner, repo, issueNumber, body) {

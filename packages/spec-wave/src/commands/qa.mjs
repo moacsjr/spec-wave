@@ -2,9 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { resolveToken } from '../api/auth.mjs';
 import { getIssue, getPR, commentOnIssue } from '../api/github-rest.mjs';
-import { addProjectItem, setItemSingleSelect, getSingleSelectField, getIssueParent, getItemSingleSelectValue } from '../api/github-graphql.mjs';
+import { getIssueParent } from '../api/github-graphql.mjs';
 import { detectIssueType } from '../lib/issue-type.mjs';
-import { CONFIG_FILE, STATUS_OPTIONS, STAGE_ORDER, PROGRESS_TODO } from '../config.mjs';
+import { loadProjectConfig, resolveField, advanceToStage } from '../lib/board.mjs';
+import { CONFIG_FILE, STATUS_OPTIONS, PROGRESS_TODO } from '../config.mjs';
 
 const QA_STAGE = STATUS_OPTIONS.find(s => s.name.includes('QA'))?.name;
 const TODO_STATUS = PROGRESS_TODO;
@@ -18,14 +19,6 @@ function extractIssueNumbers(body) {
     if (n) nums.add(n);
   }
   return [...nums];
-}
-
-async function resolveField(token, project, name) {
-  if (project.fields?.[name]) return project.fields[name];
-  if (name === 'Etapa' && project.etapaFieldId) {
-    return { id: project.etapaFieldId, options: project.stageOptions || {} };
-  }
-  return await getSingleSelectField(token, project.id, name);
 }
 
 async function resolveFeatureIssue(token, owner, repo, issueNumber) {
@@ -48,27 +41,6 @@ async function resolveFeatureIssue(token, owner, repo, issueNumber) {
     currentNodeId = parent.nodeId;
   }
   return null;
-}
-
-// Avança para a Etapa "🧪 QA" e reinicia o Status para "Todo". Uma issue só
-// AVANÇA: se já estiver em QA ou etapa posterior, não é tocada (retorna false).
-async function setQA(token, project, etapaField, statusField, nodeId) {
-  const itemId = await addProjectItem(token, project.id, nodeId);
-  if (etapaField?.id && QA_STAGE) {
-    const current = await getItemSingleSelectValue(token, itemId, etapaField.id).catch(() => null);
-    const curIdx = current ? STAGE_ORDER.indexOf(current) : -1;
-    const tgtIdx = STAGE_ORDER.indexOf(QA_STAGE);
-    if (curIdx !== -1 && tgtIdx !== -1 && curIdx >= tgtIdx) {
-      return false; // já está em QA ou adiante — não retrocede
-    }
-    const optionId = etapaField.options?.[QA_STAGE];
-    if (optionId) await setItemSingleSelect(token, project.id, itemId, etapaField.id, optionId);
-  }
-  if (statusField?.id) {
-    const optionId = statusField.options?.[TODO_STATUS];
-    if (optionId) await setItemSingleSelect(token, project.id, itemId, statusField.id, optionId);
-  }
-  return true;
 }
 
 export async function qa({ prNumber }) {
@@ -96,20 +68,9 @@ export async function qa({ prNumber }) {
     return;
   }
 
-  const configPath = path.join(process.cwd(), CONFIG_FILE);
-  if (!existsSync(configPath)) {
-    console.warn(`${CONFIG_FILE} não encontrado — board não atualizado.`);
-    return;
-  }
-  let project;
-  try {
-    project = JSON.parse(readFileSync(configPath, 'utf-8')).project || {};
-  } catch (err) {
-    console.warn(`${CONFIG_FILE} corrompido (${err.message}) — board não atualizado.`);
-    return;
-  }
-  if (!project.id) {
-    console.warn(`Project não configurado em ${CONFIG_FILE} — board não atualizado.`);
+  const { project, error: projectError } = loadProjectConfig();
+  if (projectError) {
+    console.warn(`${projectError} — board não atualizado.`);
     return;
   }
 
@@ -124,7 +85,8 @@ export async function qa({ prNumber }) {
     if (!feature || seen.has(feature.number)) continue;
     seen.add(feature.number);
     try {
-      const moved = await setQA(projectToken, project, etapaField, statusField, feature.node_id);
+      // Avança para "🧪 QA" e reinicia o Status em "Todo" (nunca retrocede).
+      const moved = await advanceToStage(projectToken, project, etapaField, statusField, feature.node_id, QA_STAGE, TODO_STATUS);
       if (moved) {
         updated.push(`#${feature.number} ${feature.title}`);
         console.log(`Feature #${feature.number} → "${QA_STAGE}" / Status "${TODO_STATUS}".`);

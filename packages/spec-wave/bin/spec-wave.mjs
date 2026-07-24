@@ -193,4 +193,41 @@ program
     await implement({ issue, ...options }).catch(err => { console.error(err.message); process.exit(1); });
   });
 
+program
+  .command('order')
+  .description('Ordena as Stories de uma Feature pelas dependências (topológica)')
+  .argument('<feature>', 'Número da issue da Feature, ex.: 12 ou #12')
+  .action(async (feature) => {
+    const { order } = await import('../src/commands/order.mjs');
+    await order({ feature }).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
+  .command('task')
+  .description('Gerencia uma Task no board: start (Status "In Progress") ou done (Done)')
+  .argument('<action>', 'Ação: start ou done')
+  .argument('<n>', 'Número da issue da Task, ex.: 12 ou #12')
+  .action(async (action, n) => {
+    const { task } = await import('../src/commands/task.mjs');
+    await task({ action, issue: n }).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
+  .command('story')
+  .description('Gerencia uma Story no board: review (move para Code Review)')
+  .argument('<action>', 'Ação: review')
+  .argument('<n>', 'Número da issue da Story, ex.: 12 ou #12')
+  .action(async (action, n) => {
+    const { story } = await import('../src/commands/story.mjs');
+    await story({ action, issue: n }).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
+  .command('doctor')
+  .description('Diagnostica a configuração do spec-wave no repositório atual')
+  .action(async () => {
+    const { doctor } = await import('../src/commands/doctor.mjs');
+    await doctor().catch(err => { console.error(err.message); process.exit(1); });
+  });
+
 program.parse();
