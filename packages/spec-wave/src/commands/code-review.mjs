@@ -2,13 +2,17 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { resolveToken } from '../api/auth.mjs';
 import { getIssue, getPR, commentOnIssue } from '../api/github-rest.mjs';
-import { addProjectItem, setItemSingleSelect, getSingleSelectField, getIssueParent } from '../api/github-graphql.mjs';
+import { addProjectItem, getIssueParent, listSubIssues, getItemSingleSelectValue } from '../api/github-graphql.mjs';
 import { detectIssueType } from '../lib/issue-type.mjs';
-import { CONFIG_FILE, STATUS_OPTIONS } from '../config.mjs';
+import { loadProjectConfig, resolveField, advanceToStage } from '../lib/board.mjs';
+import { CONFIG_FILE, STATUS_OPTIONS, STAGE_ORDER, STAGE_DONE, PROGRESS_TODO, PROGRESS_DONE, isManualStageType } from '../config.mjs';
 
-// Campo "Etapa" (custom) → "👀 Code Review". Campo "Status" (nativo) → "Todo".
+// Ao abrir o PR: Stories/Feature → Etapa "👀 Code Review" (Status "Todo");
+// Tasks → Etapa "🎉 Done" (Status "Done"), pois a implementação da task terminou.
 const CODE_REVIEW_STAGE = STATUS_OPTIONS.find(s => s.name.includes('Code Review'))?.name;
-const TODO_STATUS = 'Todo';
+const DONE_STAGE = STAGE_DONE;
+const TODO_STATUS = PROGRESS_TODO;
+const DONE_STATUS = PROGRESS_DONE;
 
 // Extrai números de issues referenciadas no corpo do PR (Closes #N, Fixes #N, #N solto).
 function extractIssueNumbers(body) {
@@ -20,15 +24,6 @@ function extractIssueNumbers(body) {
     if (n) nums.add(n);
   }
   return [...nums];
-}
-
-// Resolve o campo SINGLE_SELECT pelo nome: usa .spec-wave.json, legado ou API.
-async function resolveField(token, project, name) {
-  if (project.fields?.[name]) return project.fields[name];
-  if (name === 'Etapa' && project.etapaFieldId) {
-    return { id: project.etapaFieldId, options: project.stageOptions || {} };
-  }
-  return await getSingleSelectField(token, project.id, name);
 }
 
 // A partir de qualquer issue (Feature/Story/Task), sobe a hierarquia e retorna a Feature.
@@ -54,17 +49,69 @@ async function resolveFeatureIssue(token, owner, repo, issueNumber) {
   return null;
 }
 
-// Move um item do board para Etapa "👀 Code Review" e Status "Todo".
-async function setCodeReview(token, project, etapaField, statusField, nodeId) {
-  const itemId = await addProjectItem(token, project.id, nodeId);
-  if (etapaField?.id && CODE_REVIEW_STAGE) {
-    const optionId = etapaField.options?.[CODE_REVIEW_STAGE];
-    if (optionId) await setItemSingleSelect(token, project.id, itemId, etapaField.id, optionId);
+// Coleta a "unidade de review" de uma issue referenciada no PR, separando por
+// tipo porque cada um tem destino próprio: Tasks → Done, Stories → Code Review,
+// Feature → Code Review (só quando todas as Stories estiverem prontas). Retorna
+// { feature:{number,nodeId,title}|null, stories:Map, tasks:Map }.
+async function collectReviewUnit(token, owner, repo, issueNumber) {
+  const stories = new Map();
+  const tasks = new Map();
+  const addStory = (n, nodeId, title) => { if (n && nodeId && !stories.has(n)) stories.set(n, { nodeId, title }); };
+  const addTask = (n, nodeId, title) => { if (n && nodeId && !tasks.has(n)) tasks.set(n, { nodeId, title }); };
+
+  let issue;
+  try { issue = await getIssue(token, owner, repo, issueNumber); } catch { return { feature: null, stories, tasks }; }
+  const type = detectIssueType(issue);
+  if (type !== 'Feature' && type !== 'Story' && type !== 'Task') return { feature: null, stories, tasks };
+
+  const featureIssue = await resolveFeatureIssue(token, owner, repo, issueNumber);
+  const feature = featureIssue
+    ? { number: featureIssue.number, nodeId: featureIssue.node_id, title: featureIssue.title }
+    : null;
+
+  // Spikes (tipos manuais) nunca são movidos automaticamente — pulados aqui.
+  const isManual = (sub) => isManualStageType(detectIssueType({ title: sub.title, labels: sub.labels }));
+
+  if (type === 'Feature') {
+    // Referência direta à Feature: toda a subárvore (Stories + Tasks).
+    const subs = await listSubIssues(token, issue.node_id).catch(() => []);
+    for (const st of subs) {
+      if (isManual(st)) continue;
+      addStory(st.number, st.nodeId, st.title);
+      const tks = await listSubIssues(token, st.nodeId).catch(() => []);
+      for (const t of tks) { if (isManual(t)) continue; addTask(t.number, t.nodeId, t.title); }
+    }
+  } else if (type === 'Story') {
+    addStory(issue.number, issue.node_id, issue.title);
+    const tks = await listSubIssues(token, issue.node_id).catch(() => []);
+    for (const t of tks) { if (isManual(t)) continue; addTask(t.number, t.nodeId, t.title); }
+  } else { // Task → inclui a Story pai e as Tasks irmãs.
+    addTask(issue.number, issue.node_id, issue.title);
+    const parent = await getIssueParent(token, issue.node_id).catch(() => null);
+    if (parent && detectIssueType({ title: parent.title }) === 'Story') {
+      addStory(parent.number, parent.nodeId, parent.title);
+      const tks = await listSubIssues(token, parent.nodeId).catch(() => []);
+      for (const t of tks) { if (isManual(t)) continue; addTask(t.number, t.nodeId, t.title); }
+    }
   }
-  if (statusField?.id) {
-    const optionId = statusField.options?.[TODO_STATUS];
-    if (optionId) await setItemSingleSelect(token, project.id, itemId, statusField.id, optionId);
+  return { feature, stories, tasks };
+}
+
+// A Feature só avança quando TODAS as suas Stories já estiverem em Code Review
+// (ou etapa posterior). readToken lê as issues; projToken opera no Project.
+async function allStoriesReadyForReview(readToken, projToken, project, etapaField, featureNodeId) {
+  if (!etapaField?.id) return true; // sem campo Etapa não há como checar — assume ok
+  const subs = await listSubIssues(readToken, featureNodeId).catch(() => []);
+  const stories = subs.filter(s => detectIssueType({ title: s.title }) === 'Story');
+  if (stories.length === 0) return true;
+  const tgtIdx = STAGE_ORDER.indexOf(CODE_REVIEW_STAGE);
+  for (const st of stories) {
+    const itemId = await addProjectItem(projToken, project.id, st.nodeId);
+    const current = await getItemSingleSelectValue(projToken, itemId, etapaField.id).catch(() => null);
+    const idx = current ? STAGE_ORDER.indexOf(current) : -1;
+    if (idx === -1 || idx < tgtIdx) return false; // há Story pendente
   }
+  return true;
 }
 
 export async function codeReview({ prNumber }) {
@@ -93,20 +140,9 @@ export async function codeReview({ prNumber }) {
   }
 
   // Carrega projeto do .spec-wave.json
-  const configPath = path.join(process.cwd(), CONFIG_FILE);
-  if (!existsSync(configPath)) {
-    console.warn(`${CONFIG_FILE} não encontrado — board não atualizado.`);
-    return;
-  }
-  let project;
-  try {
-    project = JSON.parse(readFileSync(configPath, 'utf-8')).project || {};
-  } catch (err) {
-    console.warn(`${CONFIG_FILE} corrompido (${err.message}) — board não atualizado.`);
-    return;
-  }
-  if (!project.id) {
-    console.warn(`Project não configurado em ${CONFIG_FILE} — board não atualizado.`);
+  const { project, error: projectError } = loadProjectConfig();
+  if (projectError) {
+    console.warn(`${projectError} — board não atualizado.`);
     return;
   }
 
@@ -116,17 +152,68 @@ export async function codeReview({ prNumber }) {
 
   const seen = new Set();
   const updated = [];
+  const featuresChecked = new Set();
 
+  // Regras ao abrir o PR: Tasks → 🎉 Done (implementação concluída);
+  // Stories → 👀 Code Review; Feature → Code Review só quando TODAS as suas
+  // Stories já estiverem em Code Review.
   for (const num of issueNums) {
-    const feature = await resolveFeatureIssue(token, owner, repo, num);
-    if (!feature || seen.has(feature.number)) continue;
-    seen.add(feature.number);
-    try {
-      await setCodeReview(projectToken, project, etapaField, statusField, feature.node_id);
-      updated.push(`#${feature.number} ${feature.title}`);
-      console.log(`Feature #${feature.number} → "${CODE_REVIEW_STAGE}" / Status "${TODO_STATUS}".`);
-    } catch (err) {
-      console.warn(`Falha ao atualizar Feature #${feature.number}: ${err.message}`);
+    const { feature, stories, tasks } = await collectReviewUnit(token, owner, repo, num);
+
+    // Tasks → Done (Status Done).
+    for (const [n, info] of tasks) {
+      if (seen.has(n)) continue;
+      seen.add(n);
+      try {
+        const moved = await advanceToStage(projectToken, project, etapaField, statusField, info.nodeId, DONE_STAGE, DONE_STATUS);
+        if (moved) {
+          updated.push(`#${n} ${info.title} → ${DONE_STAGE}`);
+          console.log(`#${n} → "${DONE_STAGE}" / Status "${DONE_STATUS}".`);
+        } else {
+          console.log(`#${n} já está em "${DONE_STAGE}" ou etapa posterior — mantido (não retrocede).`);
+        }
+      } catch (err) {
+        console.warn(`Falha ao atualizar #${n}: ${err.message}`);
+      }
+    }
+
+    // Stories → Code Review (Status Todo).
+    for (const [n, info] of stories) {
+      if (seen.has(n)) continue;
+      seen.add(n);
+      try {
+        const moved = await advanceToStage(projectToken, project, etapaField, statusField, info.nodeId, CODE_REVIEW_STAGE, TODO_STATUS);
+        if (moved) {
+          updated.push(`#${n} ${info.title} → ${CODE_REVIEW_STAGE}`);
+          console.log(`#${n} → "${CODE_REVIEW_STAGE}" / Status "${TODO_STATUS}".`);
+        } else {
+          console.log(`#${n} já está em "${CODE_REVIEW_STAGE}" ou etapa posterior — mantido (não retrocede).`);
+        }
+      } catch (err) {
+        console.warn(`Falha ao atualizar #${n}: ${err.message}`);
+      }
+    }
+
+    // Feature: só avança se todas as suas Stories já estão em Code Review+.
+    if (feature && !featuresChecked.has(feature.number)) {
+      featuresChecked.add(feature.number);
+      try {
+        const ready = await allStoriesReadyForReview(token, projectToken, project, etapaField, feature.nodeId);
+        if (!ready) {
+          console.log(`Feature #${feature.number} mantida em desenvolvimento — ainda há Stories pendentes (fora de "${CODE_REVIEW_STAGE}").`);
+        } else if (!seen.has(feature.number)) {
+          seen.add(feature.number);
+          const moved = await advanceToStage(projectToken, project, etapaField, statusField, feature.nodeId, CODE_REVIEW_STAGE, TODO_STATUS);
+          if (moved) {
+            updated.push(`#${feature.number} ${feature.title} (Feature) → ${CODE_REVIEW_STAGE}`);
+            console.log(`Feature #${feature.number} → "${CODE_REVIEW_STAGE}" (todas as Stories concluídas).`);
+          } else {
+            console.log(`Feature #${feature.number} já está em "${CODE_REVIEW_STAGE}" ou etapa posterior.`);
+          }
+        }
+      } catch (err) {
+        console.warn(`Falha ao avaliar a Feature #${feature.number}: ${err.message}`);
+      }
     }
   }
 
@@ -134,10 +221,10 @@ export async function codeReview({ prNumber }) {
     await commentOnIssue(
       token, owner, repo, parseInt(prNumber, 10),
       `🔍 **Code Review iniciado**\n\n` +
-      `Feature(s) movida(s) para **${CODE_REVIEW_STAGE}**:\n\n` +
+      `Board atualizado (Tasks → **${DONE_STAGE}**; Story → **${CODE_REVIEW_STAGE}**; Feature só avança quando todas as Stories concluírem):\n\n` +
       updated.map(f => `- ${f}`).join('\n')
     ).catch(() => {});
   }
 
-  console.log(`code-review: ${updated.length} feature(s) atualizada(s).`);
+  console.log(`code-review: ${updated.length} item(ns) atualizado(s) no board.`);
 }

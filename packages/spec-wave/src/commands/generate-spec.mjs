@@ -4,6 +4,19 @@ import { resolveToken } from '../api/auth.mjs';
 import { getIssue, removeLabel, commentOnIssue } from '../api/github-rest.mjs';
 import { generateDocument } from '../lib/claude.mjs';
 import { slugify } from '../lib/slugify.mjs';
+import { detectIssueType } from '../lib/issue-type.mjs';
+import { allowsSpecPlan, SPEC_PLAN_EXCLUDED_TYPES, TARGET_LANGUAGE } from '../config.mjs';
+
+// Aviso anexado ao comentário quando o lint de idioma ainda reprova após o
+// retry automático do generateDocument (excertos ao redor de cada vazamento).
+function formatLintWarning(lintFindings) {
+  if (!lintFindings || lintFindings.length === 0) return '';
+  const excerpts = lintFindings
+    .slice(0, 5)
+    .map(f => `\`${f.excerpt.replace(/\s+/g, ' ').trim()}\``)
+    .join(', ');
+  return `\n\n⚠️ possíveis artefatos de idioma no documento: ${excerpts}`;
+}
 
 const SYSTEM_PROMPT = `Você é um Product Manager experiente. Gere uma especificação funcional (spec.md) completa para a Feature descrita pelo usuário.
 
@@ -39,6 +52,21 @@ export async function generateSpec({ issueNumber }) {
 
   console.log(`Buscando issue #${issueNumber}...`);
   const issue = await getIssue(token, owner, repo, parseInt(issueNumber, 10));
+
+  // spec.md/plan.md são artefatos funcionais de Feature — não se aplicam a
+  // Spike/RFC/Bug. Pula a geração, remove o trigger e avisa na issue.
+  const type = detectIssueType(issue);
+  if (!allowsSpecPlan(type)) {
+    console.log(`Issue #${issueNumber} é ${type}: spec.md não é gerada para ${SPEC_PLAN_EXCLUDED_TYPES.join('/')}.`);
+    await removeLabel(token, owner, repo, parseInt(issueNumber, 10), 'spec-wave:spec');
+    await commentOnIssue(
+      token, owner, repo, parseInt(issueNumber, 10),
+      `ℹ️ **spec.md não gerada:** o tipo **${type}** não usa spec/plan no fluxo spec-wave ` +
+      `(esses artefatos são exclusivos de Features). Nenhum arquivo foi criado.`
+    ).catch(() => {});
+    return;
+  }
+
   const slug = slugify(issue.title);
   const featureDir = `docs/features/${slug}`;
   const filePath = `${featureDir}/spec.md`;
@@ -57,7 +85,11 @@ export async function generateSpec({ issueNumber }) {
   const userContent = `Gere o spec.md a partir deste payload JSON:\n\n${JSON.stringify(payload, null, 2)}`;
 
   console.log(`Gerando spec.md para: ${issue.title}`);
-  const content = await generateDocument(SYSTEM_PROMPT, userContent);
+  const { content, lintFindings } = await generateDocument(SYSTEM_PROMPT, userContent, {
+    action: 'spec',
+    lint: { lang: TARGET_LANGUAGE },
+    withReport: true,
+  });
 
   mkdirSync(featureDir, { recursive: true });
   writeFileSync(filePath, content, 'utf-8');
@@ -80,7 +112,8 @@ export async function generateSpec({ issueNumber }) {
     `📋 **spec.md gerado automaticamente!**\n\n` +
     `📄 Arquivo: [\`${filePath}\`](https://github.com/${owner}/${repo}/blob/main/${filePath})\n\n` +
     `Revise a especificação e, quando estiver pronto, gere o plano técnico: mova o card para **📋 Plan** ou use:\n` +
-    `\`\`\`\ngh issue edit ${issueNumber} --add-label "spec-wave:plan"\n\`\`\``
+    `\`\`\`\ngh issue edit ${issueNumber} --add-label "spec-wave:plan"\n\`\`\`` +
+    formatLintWarning(lintFindings)
   );
 
   console.log(`spec.md criado em: ${filePath}`);

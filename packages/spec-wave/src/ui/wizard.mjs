@@ -1,6 +1,6 @@
 import * as p from '@clack/prompts';
 import { execSync } from 'node:child_process';
-import { AI_PROVIDERS, getProvider, DEFAULT_PROVIDER } from '../config.mjs';
+import { AI_PROVIDERS, getProvider, DEFAULT_PROVIDER, WORKFLOW_FILES, ISSUE_TEMPLATE_FILES } from '../config.mjs';
 
 export async function runWizard() {
   p.intro('spec-wave — configuração do fluxo spec-driven');
@@ -62,7 +62,7 @@ export async function runWizard() {
 
       confirm: ({ results }) =>
         p.confirm({
-          message: `Configurar ${results.repo} com GitHub Project "${results.projectTitle}"?\n  - 12 colunas kanban\n  - 5 campos customizados\n  - 15 labels\n  - 4 workflows + 2 issue templates`,
+          message: `Configurar ${results.repo} com GitHub Project "${results.projectTitle}"?\n  - 12 colunas kanban\n  - 5 campos customizados\n  - 15 labels\n  - ${WORKFLOW_FILES.length} workflows + ${ISSUE_TEMPLATE_FILES.length} issue templates`,
           initialValue: true,
         }),
     },

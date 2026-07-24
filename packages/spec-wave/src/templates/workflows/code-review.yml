@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, reopened]
 
+concurrency:
+  group: spec-wave-code-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   code-review:
     runs-on: ubuntu-latest

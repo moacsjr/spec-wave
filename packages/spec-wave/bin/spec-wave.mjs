@@ -87,6 +87,34 @@ program
   });
 
 program
+  .command('update')
+  .description('Detecta o que está desatualizado (skill, .spec-wave.json, workflows/labels do repo) e atualiza só o que mudou')
+  .option('--global', 'Verifica a skill no escopo do usuário (padrão: projeto)')
+  .option('--skip-skill', 'Não verifica/atualiza a skill instalada')
+  .option('--skip-config', 'Não verifica/atualiza o .spec-wave.json local')
+  .option('--skip-repo', 'Não verifica/atualiza workflows e labels do repo')
+  .option('--dry-run', 'Mostra o que seria atualizado sem alterar nada')
+  .option('--yes', 'Aplica sem pedir confirmação')
+  .action(async (options) => {
+    const { update } = await import('../src/commands/update.mjs');
+    await update(options).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
+  .command('install-skill')
+  .description('Instala a skill spec-wave no(s) agente(s) detectado(s): Claude Code, Cursor, opencode, Cline, Kilo, Antigravity, AGENTS.md')
+  .option('--agent <names>', 'Agente(s) alvo, separados por vírgula (pula a detecção)')
+  .option('--all', 'Instala em todos os agentes detectados')
+  .option('--global', 'Instala no escopo do usuário (padrão: projeto)')
+  .option('--dry-run', 'Mostra o que seria instalado sem gravar')
+  .option('--force', 'Sobrescreve arquivos existentes sem confirmar')
+  .option('--yes', 'Modo não-interativo')
+  .action(async (options) => {
+    const { installSkill } = await import('../src/commands/install-skill.mjs');
+    await installSkill(options).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
   .command('uninstall')
   .description('Remove labels, arquivos .github e o .spec-wave.json (mantém o GitHub Project)')
   .option('--repo <owner/repo>', 'Repositório (padrão: lê do .spec-wave.json)')
@@ -163,6 +191,43 @@ program
   .action(async (issue, options) => {
     const { implement } = await import('../src/commands/implement.mjs');
     await implement({ issue, ...options }).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
+  .command('order')
+  .description('Ordena as Stories de uma Feature pelas dependências (topológica)')
+  .argument('<feature>', 'Número da issue da Feature, ex.: 12 ou #12')
+  .action(async (feature) => {
+    const { order } = await import('../src/commands/order.mjs');
+    await order({ feature }).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
+  .command('task')
+  .description('Gerencia uma Task no board: start (Status "In Progress") ou done (Done)')
+  .argument('<action>', 'Ação: start ou done')
+  .argument('<n>', 'Número da issue da Task, ex.: 12 ou #12')
+  .action(async (action, n) => {
+    const { task } = await import('../src/commands/task.mjs');
+    await task({ action, issue: n }).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
+  .command('story')
+  .description('Gerencia uma Story no board: review (move para Code Review)')
+  .argument('<action>', 'Ação: review')
+  .argument('<n>', 'Número da issue da Story, ex.: 12 ou #12')
+  .action(async (action, n) => {
+    const { story } = await import('../src/commands/story.mjs');
+    await story({ action, issue: n }).catch(err => { console.error(err.message); process.exit(1); });
+  });
+
+program
+  .command('doctor')
+  .description('Diagnostica a configuração do spec-wave no repositório atual')
+  .action(async () => {
+    const { doctor } = await import('../src/commands/doctor.mjs');
+    await doctor().catch(err => { console.error(err.message); process.exit(1); });
   });
 
 program.parse();

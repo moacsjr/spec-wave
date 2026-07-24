@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This repo has two parts:
 1. **`rfc/`** — Process documentation in Brazilian Portuguese defining the spec-driven workflow (RFC-001)
-2. **`packages/spec-wave/`** — A Node.js CLI (`npx spec-wave`) and Claude Code skill (`skill/SKILL.md`) that implement the RFC
+2. **`packages/spec-wave/`** — A Node.js CLI (`npx spec-wave`) and a coding-agent skill (`src/templates/skill/SKILL.md`) that implement the RFC
 
 All documentation is written in **Brazilian Portuguese**.
 
@@ -21,9 +21,12 @@ packages/spec-wave/
 │   ├── api/                   GitHub GraphQL (Projects v2) and REST API wrappers
 │   ├── setup/                 Three setup phases: project board, labels, files
 │   ├── lib/                   Shared utilities: slugify, Claude API client
-│   └── templates/             Static markdown and YAML templates pushed to target repos
-skill/SKILL.md                 Claude Code skill for guiding the workflow
+│   └── templates/             Static markdown/YAML templates + skill/SKILL.md (bundled skill source)
 ```
+
+The skill lives at `packages/spec-wave/src/templates/skill/SKILL.md` (bundled with
+the npm package). The `install-skill` command installs it into whatever agent the
+user runs — see "Adding the Skill" below.
 
 **config.mjs is the authoritative source** for all RFC data (kanban columns, custom fields, labels). All other modules import from it — edit config.mjs to change the workflow definition.
 
@@ -57,6 +60,12 @@ node packages/spec-wave/bin/spec-wave.mjs init --repo owner/test-repo
 
 ## Adding the Skill
 
-To use the Claude Code skill in any project:
-1. Copy `skill/SKILL.md` to `~/.claude/skills/spec-wave/SKILL.md`
-2. Add to the project's CLAUDE.md: trigger `/spec-wave` to invoke the skill
+Run `npx @spec-wave/cli install-skill` in the target project. It autodetects the
+coding agent(s) in use (Claude Code, Cursor, opencode, Cline, Kilo Code,
+Antigravity, or a generic `AGENTS.md`) and writes the skill in each one's format
+and location. Defaults to project scope; pass `--global` for user scope, or
+`--agent <name>` / `--all` to select targets explicitly.
+
+The bundled skill source is `packages/spec-wave/src/templates/skill/SKILL.md` —
+edit it there. For Claude Code the file is copied verbatim to
+`.claude/skills/spec-wave/SKILL.md`; then trigger `/spec-wave` to invoke it.

@@ -143,8 +143,8 @@ packages/spec-wave/
 │   └── templates/
 │       ├── workflows/             YAMLs instalados no repo-alvo via init
 │       ├── issue/                 Templates de issue (plan-template.md, spec-template.md)
-│       └── config/                tech_context.yml scaffold
-skill/SKILL.md                     Skill Claude Code que guia o fluxo interativamente
+│       ├── config/                tech_context.yml scaffold
+│       └── skill/SKILL.md         Skill que guia o fluxo (instalada via install-skill)
 rfc/                               Documentação de processo (RFC-001, RFC-002) em PT-BR
 ```
 
@@ -190,6 +190,20 @@ npx @spec-wave/cli init --repo owner/repo
 # Atualizar labels e workflows (sem recriar o Project)
 npx @spec-wave/cli init --skip-project
 
-# Adicionar a skill ao Claude Code
-cp skill/SKILL.md ~/.claude/skills/spec-wave/SKILL.md
+# Instalar a skill no agente em uso (autodetecta Claude Code, Cursor, opencode, Cline, Kilo, Antigravity, AGENTS.md)
+npx @spec-wave/cli install-skill
+
+# ...ou escolher agentes/escopo explicitamente
+npx @spec-wave/cli install-skill --agent claude,cursor --global
+
+# Atualizar tudo que ficou para trás (só o que mudou): skill, .spec-wave.json e workflows/labels
+npx @spec-wave/cli update
 ```
+
+O `install-skill` detecta os agentes presentes no projeto e grava a skill no
+formato/local correto de cada um (por padrão no escopo do projeto; use `--global`
+para o escopo do usuário). Rode `npx @spec-wave/cli install-skill --help` para as opções.
+
+Depois de atualizar a CLI (o `npx` sempre baixa a última), rode `npx @spec-wave/cli update`
+para reconciliar a skill instalada, o `.spec-wave.json` e os arquivos do repo com a
+nova versão — ele detecta e aplica **apenas o que mudou** (interativo; use `--dry-run` para pré-visualizar).

@@ -2,7 +2,7 @@ import * as p from '@clack/prompts';
 import chalk from 'chalk';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import { CONFIG_FILE } from '../config.mjs';
+import { CONFIG_FILE, PORTAL_URL } from '../config.mjs';
 
 // Lê o marcador .spec-wave.json do repositório atual (cwd) e reporta se o
 // spec-wave já foi inicializado. Usado pela skill para decidir entre mostrar
@@ -17,6 +17,7 @@ export async function info(options = {}) {
     }
     p.intro(chalk.bold('spec-wave info'));
     p.log.warn(`Este repositório ${chalk.bold('não foi inicializado')} (sem ${CONFIG_FILE}).`);
+    p.log.info(`🌐 Acesse o Portal Web da ferramenta em ${chalk.cyan(PORTAL_URL)}`);
     p.outro('Execute `npx @spec-wave/cli init` para configurar.');
     return;
   }
@@ -50,5 +51,6 @@ export async function info(options = {}) {
     `${chalk.dim('Criado em:')}   ${config.initializedAt ?? '?'}`,
     'Configuração'
   );
+  p.log.info(`🌐 Acesse o Portal Web da ferramenta em ${chalk.cyan(PORTAL_URL)}`);
   p.outro('Use `/spec-wave feature <descrição>` para criar uma Feature.');
 }

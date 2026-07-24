@@ -4,24 +4,32 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import path from 'node:path';
 import { resolveToken } from '../api/auth.mjs';
-import { CONFIG_FILE } from '../config.mjs';
-import { getIssue } from '../api/github-rest.mjs';
+import {
+  CONFIG_FILE, STAGE_DEVELOPMENT, STAGE_CODE_REVIEW, STAGE_DONE,
+  PROGRESS_TODO, PROGRESS_IN_PROGRESS, PROGRESS_DONE,
+} from '../config.mjs';
+import { getIssue, listIssueComments, listBlockedBy } from '../api/github-rest.mjs';
 import { listSubIssues, getIssueParent } from '../api/github-graphql.mjs';
 import { detectIssueType } from '../lib/issue-type.mjs';
 import { slugify } from '../lib/slugify.mjs';
+import { parseDependencies } from '../lib/dependencies.mjs';
+import { extractPathsFromPlan, buildCodeDigest } from '../lib/code-digest.mjs';
 
 // Diretório onde montamos o arquivo de contexto entregue ao spec-kit.
 const WORK_DIR = '.spec-wave';
 
 // Sobe a cadeia de pais (Task → Story → Feature) até achar uma issue do tipo
-// "Feature" e devolve seu título (para resolver docs/features/<slug>). Limita a
-// profundidade para evitar loops em dados inconsistentes.
-async function resolveFeatureTitle(token, startNodeId) {
+// "Feature" e devolve { number, title } — usado para resolver docs/features/<slug>
+// e para as instruções de fim de Story (mover a Feature para Code Review). Limita
+// a profundidade para evitar loops em dados inconsistentes.
+async function resolveFeature(token, startNodeId) {
   let current = startNodeId;
   for (let depth = 0; depth < 5 && current; depth++) {
     const parent = await getIssueParent(token, current);
     if (!parent) return null;
-    if (detectIssueType({ title: parent.title }) === 'Feature') return parent.title;
+    if (detectIssueType({ title: parent.title }) === 'Feature') {
+      return { number: parent.number, title: parent.title, nodeId: parent.nodeId };
+    }
     current = parent.nodeId;
   }
   return null;
@@ -40,7 +48,10 @@ function readSpecPlan(featureDir) {
 }
 
 // Monta o markdown de contexto que será entregue ao spec-kit implement.
-function buildContext({ type, issue, tasks, spec, plan, specPath, planPath }) {
+function buildContext({
+  type, issue, tasks, feature, siblingStories = [], spec, plan, specPath, planPath,
+  comments = [], codeDigest = null, blockedByWarnings = [],
+}) {
   const lines = [];
   lines.push(`# Contexto de implementação — ${type} #${issue.number}`);
   lines.push('');
@@ -50,31 +61,117 @@ function buildContext({ type, issue, tasks, spec, plan, specPath, planPath }) {
     lines.push(issue.body.trim());
   }
 
-  // Issues cujo status deve ir para "in progress" ao iniciar: a issue alvo
-  // (Story ou Task) e, no caso de Story, todas as suas Tasks.
-  const inProgress = [issue.number, ...tasks.map(t => t.number)]
-    .filter((n, i, arr) => arr.indexOf(n) === i);
+  // Dependências ainda abertas — logo após o cabeçalho, para máxima visibilidade.
+  if (blockedByWarnings.length > 0) {
+    lines.push('');
+    lines.push('## ⚠️ Dependências pendentes');
+    lines.push('');
+    for (const w of blockedByWarnings) lines.push(`- ${w}`);
+    lines.push('');
+    lines.push(
+      '**Implemente somente se tiver certeza de que a dependência não é bloqueante; ' +
+      'caso contrário, pare e reporte.**'
+    );
+  }
+
+  // Modelo do board: "Etapa" (coluna do kanban) = DIREÇÃO, só avança; "Status"
+  // (Todo/In Progress/Done) = PROGRESSO dentro da etapa. O desenvolvimento de
+  // cada Task acontece na Etapa Desenvolvimento (Status In Progress); ao concluir,
+  // a Task avança para a Etapa Done (Status Done). A Story avança para Code Review.
   lines.push('');
-  lines.push('## Instruções para o agente');
+  lines.push('## Instruções de execução (uma task por vez, sequencial)');
   lines.push('');
   lines.push(
-    'Antes de começar a implementação, atualize o status no GitHub Project para ' +
-    '**🚧 Desenvolvimento** (in progress) ' +
-    (type === 'Story'
-      ? `da Story #${issue.number} e de cada Task: ${inProgress.filter(n => n !== issue.number).map(n => `#${n}`).join(', ')}.`
-      : `da Task #${issue.number}.`)
+    'Há **dois campos** no board com papéis diferentes — não os confunda:\n' +
+    `- **Etapa** (Backlog → … → ${STAGE_DEVELOPMENT} → ${STAGE_CODE_REVIEW} → … → ${STAGE_DONE}): a DIREÇÃO no kanban. Uma issue só **avança**, **nunca** volta para uma etapa anterior.\n` +
+    `- **Status** (${PROGRESS_TODO} → ${PROGRESS_IN_PROGRESS} → ${PROGRESS_DONE}): o **progresso dentro da etapa atual**. Ao avançar de etapa, o Status reinicia em ${PROGRESS_TODO} — exceto ao chegar na Etapa ${STAGE_DONE}, onde o Status fica **${PROGRESS_DONE}**.`
   );
+  lines.push('');
+  if (type === 'Story') {
+    lines.push(
+      `Nesta fase, a Story #${issue.number} e suas Tasks estão na Etapa **${STAGE_DEVELOPMENT}**. ` +
+      `Durante o desenvolvimento de cada Task, mexa no **Status**; ao **concluir** a Task, ela ` +
+      `**avança para a Etapa ${STAGE_DONE}** (com Status ${PROGRESS_DONE}).`
+    );
+    lines.push('');
+    lines.push(`1. Garanta que a Story #${issue.number} está na Etapa **${STAGE_DEVELOPMENT}** com Status **${PROGRESS_IN_PROGRESS}**, e que as Tasks estão nessa Etapa com Status **${PROGRESS_TODO}**.`);
+    lines.push(`2. Implemente as ${tasks.length} task(s) **uma de cada vez, na ordem abaixo**. É PROIBIDO ter mais de uma Task com Status **${PROGRESS_IN_PROGRESS}** ao mesmo tempo. Para **cada Task**, na ordem:`);
+    lines.push(`   1. **Ao começar:** Status da Task → **${PROGRESS_IN_PROGRESS}** (a Etapa continua ${STAGE_DEVELOPMENT}).`);
+    lines.push('   2. **Implemente** a Task por completo.');
+    lines.push(`   3. **Ao concluir:** **avance a Task para a Etapa ${STAGE_DONE}** com Status **${PROGRESS_DONE}**.`);
+    lines.push('   4. Só então avance para a próxima Task.');
+    lines.push('');
+    lines.push(`3. **Ao concluir TODA a Story** (todas as Tasks na Etapa ${STAGE_DONE}):`);
+    lines.push('   1. Faça o **commit** de todas as mudanças da implementação.');
+    lines.push(`   2. Abra o **Pull Request** da Story #${issue.number}.`);
+    lines.push(
+      `   3. **Avance a Etapa da Story #${issue.number} para ${STAGE_CODE_REVIEW}** ` +
+      `(reinicie o Status para ${PROGRESS_TODO}). As Tasks já estão em ${STAGE_DONE}.`
+    );
+    // A Feature só avança quando TODAS as suas Stories estiverem implementadas.
+    lines.push(`   4. **A Feature${feature ? ` #${feature.number}` : ' (issue pai da Story)'} só avança para ${STAGE_CODE_REVIEW} quando TODAS as suas Stories estiverem implementadas:**`);
+    if (siblingStories.length === 0) {
+      lines.push(`      - Esta é a **única Story** da Feature → avance também a Feature${feature ? ` #${feature.number}` : ''} para ${STAGE_CODE_REVIEW} (Status → ${PROGRESS_TODO}).`);
+    } else {
+      lines.push(`      - Outras Stories desta Feature: ${siblingStories.map(s => `#${s.number}`).join(', ')}.`);
+      lines.push(`      - Verifique a Etapa de cada uma. Avance a Feature para ${STAGE_CODE_REVIEW} **somente se TODAS** já estiverem em ${STAGE_CODE_REVIEW} (ou etapa posterior).`);
+      lines.push(`      - Se **qualquer** Story ainda estiver pendente (antes de ${STAGE_CODE_REVIEW}), **NÃO mova a Feature** — deixe-a em ${STAGE_DEVELOPMENT} até a última Story ser concluída.`);
+    }
+  } else {
+    lines.push(`Esta Task #${issue.number} está na Etapa **${STAGE_DEVELOPMENT}**:`);
+    lines.push('');
+    lines.push(`1. **Ao começar:** Status da Task #${issue.number} → **${PROGRESS_IN_PROGRESS}** (Etapa continua ${STAGE_DEVELOPMENT}).`);
+    lines.push('2. **Implemente** a Task por completo.');
+    lines.push(`3. **Ao concluir:** **avance a Task #${issue.number} para a Etapa ${STAGE_DONE}** com Status **${PROGRESS_DONE}**.`);
+  }
+  lines.push('');
   lines.push(
-    '(Atualize o campo "Etapa"/Status do item no board; mantenha o status coerente ' +
-    'conforme o progresso da implementação.)'
+    `> **Regra do board:** a **Etapa** só avança (nunca retrocede); o **Status** (${PROGRESS_TODO}/${PROGRESS_IN_PROGRESS}/${PROGRESS_DONE}) ` +
+    `mede o progresso dentro da etapa atual e reinicia a cada avanço (na Etapa ${STAGE_DONE}, o Status fica ${PROGRESS_DONE}).`
   );
 
   lines.push('');
-  lines.push(`## Tasks a implementar (${tasks.length})`);
-  for (const t of tasks) {
+  lines.push(`## Tasks a implementar — NESTA ORDEM (${tasks.length})`);
+  tasks.forEach((t, i) => {
     lines.push('');
-    lines.push(`### #${t.number} ${t.title}`);
+    lines.push(`### ${i + 1}. #${t.number} ${t.title}`);
     if (t.body && t.body.trim()) lines.push(t.body.trim());
+  });
+
+  // Comentários das issues — é onde vivem as revisões/correções feitas depois
+  // que spec/plan/stories foram escritos; em conflito, o comentário vence.
+  if (comments.length > 0) {
+    lines.push('');
+    lines.push('## Comentários das issues (revisões e correções)');
+    lines.push('');
+    lines.push(
+      '> Comentários frequentemente **corrigem ou substituem** instruções dos documentos ' +
+      'acima — em caso de conflito, o comentário mais recente prevalece.'
+    );
+    for (const group of comments) {
+      lines.push('');
+      lines.push(`### Comentários da ${group.kind} #${group.issueNumber}`);
+      if (group.total > group.items.length) {
+        lines.push('');
+        lines.push(`_(mostrando os ${group.items.length} mais recentes de ${group.total})_`);
+      }
+      for (const c of group.items) {
+        lines.push('');
+        lines.push(`**${c.author || 'desconhecido'}** (${c.createdAt}):`);
+        lines.push('');
+        lines.push(c.body.trim());
+      }
+    }
+  }
+
+  // Estado atual do código — evita reimplementar módulos que já existem.
+  if (codeDigest) {
+    lines.push('');
+    lines.push('## Estado atual do código');
+    lines.push('');
+    lines.push('> **NÃO reimplemente o que já existe; estenda os módulos listados abaixo.**');
+    lines.push('');
+    lines.push(codeDigest.trim());
   }
 
   if (spec) {
@@ -171,11 +268,12 @@ export async function implement({ issue: issueArg, featureDir: featureDirOpt, dr
     return;
   }
 
-  // 4. Resolve spec.md/plan.md da Feature (enriquecimento opcional).
+  // 4. Resolve a Feature (pai na cadeia) — para spec.md/plan.md e para as
+  // instruções de fim de Story (avançar a Etapa para Code Review).
+  const feature = await resolveFeature(token, issue.node_id);
   let featureDir = featureDirOpt;
-  if (!featureDir) {
-    const featureTitle = await resolveFeatureTitle(token, issue.node_id);
-    if (featureTitle) featureDir = path.join('docs', 'features', slugify(featureTitle));
+  if (!featureDir && feature?.title) {
+    featureDir = path.join('docs', 'features', slugify(feature.title));
   }
   let specPlan = { spec: null, plan: null, specPath: null, planPath: null };
   if (featureDir && existsSync(featureDir)) {
@@ -186,8 +284,80 @@ export async function implement({ issue: issueArg, featureDir: featureDirOpt, dr
     p.log.warn('Não foi possível resolver a Feature; seguindo só com as tasks (use --feature-dir).');
   }
 
+  // 4b. Stories irmãs da Feature — a Feature só avança para Code Review quando
+  // TODAS as suas Stories estiverem implementadas. Lista as outras para o agente
+  // verificar antes de mover a Feature.
+  let siblingStories = [];
+  if (type === 'Story' && feature?.nodeId) {
+    const featureSubs = await listSubIssues(token, feature.nodeId).catch(() => []);
+    siblingStories = featureSubs
+      .filter(s => detectIssueType({ title: s.title }) === 'Story' && s.number !== issue.number)
+      .map(s => ({ number: s.number, title: s.title }));
+  }
+
+  // 4c. Comentários das issues (best-effort) — revisões e correções vivem nos
+  // comentários, não no body; sem eles o agente implementa instruções já
+  // corrigidas. Feature primeiro (correções de escopo), depois a issue-alvo.
+  const MAX_COMMENTS_PER_ISSUE = 15;
+  const MAX_COMMENT_CHARS = 2000;
+  const comments = [];
+  const commentSources = [];
+  if (feature && feature.number !== issue.number) {
+    commentSources.push({ number: feature.number, kind: 'Feature' });
+  }
+  commentSources.push({ number: issue.number, kind: type });
+  for (const src of commentSources) {
+    const all = await listIssueComments(token, owner, repo, src.number).catch(() => []);
+    if (all.length === 0) continue;
+    const items = all.slice(-MAX_COMMENTS_PER_ISSUE).map(c => ({
+      ...c,
+      body: c.body.length > MAX_COMMENT_CHARS
+        ? `${c.body.slice(0, MAX_COMMENT_CHARS)}…[truncado]`
+        : c.body,
+    }));
+    comments.push({ issueNumber: src.number, kind: src.kind, total: all.length, items });
+  }
+
+  // 4d. Digest do estado do código (best-effort) — commits desde a criação da
+  // Feature + árvore dos módulos citados no plan, para o agente estender o que
+  // já existe em vez de reimplementar.
+  let codeDigest = null;
+  try {
+    let sinceIso = issue.created_at || null;
+    if (feature?.number) {
+      const featureIssue = await getIssue(token, owner, repo, feature.number).catch(() => null);
+      if (featureIssue?.created_at) sinceIso = featureIssue.created_at;
+    }
+    const paths = specPlan.plan ? extractPathsFromPlan(specPlan.plan) : [];
+    codeDigest = await buildCodeDigest({ sinceIso, paths });
+  } catch {
+    codeDigest = null;
+  }
+
+  // 4e. Dependências pendentes (best-effort) — une a linha "Depende de:" do
+  // body com a relação nativa blocked_by do GitHub; considera pendente toda
+  // dependência ainda não fechada.
+  const blockedByWarnings = [];
+  try {
+    const depNumbers = new Set(parseDependencies(issue.body));
+    const blocked = await listBlockedBy(token, owner, repo, issue.number).catch(() => []);
+    for (const b of blocked) depNumbers.add(b.number);
+    for (const depNumber of [...depNumbers].sort((a, b) => a - b)) {
+      const dep = await getIssue(token, owner, repo, depNumber).catch(() => null);
+      if (!dep || dep.state === 'closed') continue;
+      const warning =
+        `${type} #${issue.number} depende de #${depNumber} («${dep.title}»), ` +
+        `que ainda não está concluída (state: ${dep.state}).`;
+      blockedByWarnings.push(warning);
+      p.log.warn(warning);
+    }
+  } catch { /* aviso é best-effort — segue sem ele */ }
+
   // 5. Monta e grava o arquivo de contexto.
-  const context = buildContext({ type, issue, tasks, ...specPlan });
+  const context = buildContext({
+    type, issue, tasks, feature, siblingStories, ...specPlan,
+    comments, codeDigest, blockedByWarnings,
+  });
   mkdirSync(WORK_DIR, { recursive: true });
   const tasksFile = path.join(WORK_DIR, `implement-${issueNumber}.md`);
   writeFileSync(tasksFile, context);

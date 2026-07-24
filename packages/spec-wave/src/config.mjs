@@ -4,6 +4,9 @@
 // pelo comando `info` (e pela skill) para detectar se o spec-wave já foi configurado.
 export const CONFIG_FILE = '.spec-wave.json';
 
+// Portal Web da ferramenta — exibido ao final do `init` e no `info`.
+export const PORTAL_URL = 'https://spec-wave.astratech.net.br';
+
 // Providers de IA suportados pelos workflows (generate-plan/spec/decompose).
 // O provider e o modelo escolhidos no `init` são persistidos em .spec-wave.json
 // (bloco `ai`) e lidos em runtime por src/lib/claude.mjs. Cada provider declara
@@ -29,6 +32,16 @@ export const AI_PROVIDERS = [
 
 export const DEFAULT_PROVIDER = 'anthropic';
 
+// Ações de IA que podem ter modelo próprio no .spec-wave.json (bloco
+// `ai.models`, ex.: { "critique": "claude-opus-4-1" }). Resolvidas em runtime
+// por resolveAiConfig() em src/lib/claude.mjs.
+export const AI_ACTIONS = ['spec', 'plan', 'decompose', 'critique'];
+
+// Idioma-alvo de todos os documentos gerados por IA (spec/plan/decompose/critique).
+// Usado pelo lint de saída (src/lib/output-lint.mjs) para detectar vazamento
+// de caracteres de outros alfabetos.
+export const TARGET_LANGUAGE = 'pt-BR';
+
 export function getProvider(value) {
   return AI_PROVIDERS.find(p => p.value === value);
 }
@@ -47,6 +60,24 @@ export const STATUS_OPTIONS = [
   { name: '🚀 Deploy',           color: 'ORANGE' },
   { name: '🎉 Done',            color: 'GREEN'  },
 ];
+
+// ⚠️ Dois campos DISTINTOS no board (não confundir):
+//  • "Etapa" (campo custom = as opções de STATUS_OPTIONS acima): as colunas do
+//    kanban. Determina a DIREÇÃO do fluxo — uma issue só AVANÇA, nunca volta.
+//  • "Status" (campo nativo: Todo/In Progress/Done): o PROGRESSO dentro da etapa
+//    atual. Ao avançar de etapa, o Status reinicia em "Todo".
+
+// Etapas (campo Etapa) referenciadas pelo fluxo de implementação.
+export const STAGE_DEVELOPMENT = STATUS_OPTIONS.find(s => s.name.includes('Desenvolvimento')).name;
+export const STAGE_CODE_REVIEW = STATUS_OPTIONS.find(s => s.name.includes('Code Review')).name;
+export const STAGE_DONE = STATUS_OPTIONS.find(s => s.name.includes('Done')).name;
+// Ordem canônica das etapas — usada para garantir que uma issue só AVANÇA.
+export const STAGE_ORDER = STATUS_OPTIONS.map(s => s.name);
+
+// Valores do campo nativo "Status" (progresso dentro da etapa).
+export const PROGRESS_TODO = 'Todo';
+export const PROGRESS_IN_PROGRESS = 'In Progress';
+export const PROGRESS_DONE = 'Done';
 
 export const CUSTOM_FIELDS = [
   {
@@ -110,6 +141,27 @@ export const WORK_ITEM_TYPES = CUSTOM_FIELDS
   .find(f => f.name === 'Work Item Type')
   .options.map(o => o.name);
 
+// Tipos cujo estágio no board é gerenciado MANUALMENTE: as automações (Actions
+// code-review/qa e o fluxo do implement) NUNCA avançam a Etapa desses itens —
+// o usuário os move à mão. Spike é uma investigação cujo avanço é decisão humana.
+export const MANUAL_STAGE_TYPES = ['Spike'];
+export function isManualStageType(type) {
+  return MANUAL_STAGE_TYPES.includes(type);
+}
+
+// Tipos que NÃO geram spec.md/plan.md (não passam pelo fluxo funcional de Feature).
+export const SPEC_PLAN_EXCLUDED_TYPES = ['Spike', 'RFC', 'Bug'];
+export function allowsSpecPlan(type) {
+  return !SPEC_PLAN_EXCLUDED_TYPES.includes(type);
+}
+
+// Tipos que podem ser decompostos e o que geram:
+//  • Feature → Stories (+ Tasks)   • RFC → Tasks (diretamente, sem Stories)
+export const DECOMPOSE_TARGETS = {
+  Feature: 'stories',
+  RFC: 'tasks',
+};
+
 export const TYPE_LABELS = [
   { name: '[INITIATIVE]', color: 'C5DEF5', description: 'Agrupamento estratégico de Epics' },
   { name: '[EPIC]',    color: '7B61FF', description: 'Objetivo estratégico'  },
@@ -128,12 +180,18 @@ export const PRIORITY_LABELS = [
   { name: 'P3', color: 'EDEDED', description: 'Baixa'    },
 ];
 
+// Labels de estado gravadas pelas automações (não são gatilhos do usuário).
+export const LABEL_CRITIQUE_FAILED = 'spec-wave:critique-failed';
+export const LABEL_DECOMPOSED = 'spec-wave:decomposed';
+
 export const TRIGGER_LABELS = [
   { name: 'spec-wave:spec',          color: 'BFD4F2', description: 'Gerar spec.md via GitHub Action'      },
   { name: 'spec-wave:plan',          color: 'BFD4F2', description: 'Gerar plan.md via GitHub Action'      },
   { name: 'spec-wave:ready',         color: '0E8A16', description: 'Validar spec+plan e mover para Ready'  },
   { name: 'spec-wave:plan-approved', color: '0E8A16', description: 'Spec+plan validados com sucesso'       },
   { name: 'spec-wave:decompose',     color: 'BFD4F2', description: 'Decompor em Stories e Tasks'          },
+  { name: LABEL_CRITIQUE_FAILED,     color: 'B60205', description: 'Crítica adversarial apontou contradições graves' },
+  { name: LABEL_DECOMPOSED,          color: 'EDEDED', description: 'Feature já decomposta em Stories e Tasks' },
 ];
 
 export const ALL_LABELS = [...TYPE_LABELS, ...PRIORITY_LABELS, ...TRIGGER_LABELS];

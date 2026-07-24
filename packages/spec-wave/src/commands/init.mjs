@@ -1,6 +1,6 @@
 import * as p from '@clack/prompts';
 import chalk from 'chalk';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { resolveToken, verifyTokenScopes } from '../api/auth.mjs';
@@ -8,8 +8,8 @@ import { runWizard } from '../ui/wizard.mjs';
 import { setupProject } from '../setup/project.mjs';
 import { setupLabels } from '../setup/labels.mjs';
 import { setupFiles } from '../setup/files.mjs';
-import { upsertFile, getFileContent } from '../api/github-rest.mjs';
-import { CONFIG_FILE, AI_PROVIDERS, getProvider, DEFAULT_PROVIDER } from '../config.mjs';
+import { getFileContent } from '../api/github-rest.mjs';
+import { CONFIG_FILE, AI_PROVIDERS, getProvider, DEFAULT_PROVIDER, PORTAL_URL, WORKFLOW_FILES, ISSUE_TEMPLATE_FILES } from '../config.mjs';
 
 const __dir = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.join(__dir, '..', '..', 'package.json'), 'utf-8'));
@@ -91,8 +91,13 @@ export async function init(options) {
   if (options.skipProject) {
     p.log.info('Pulando criação do GitHub Project (--skip-project).');
     // Preserva o bloco project do .spec-wave.json existente (se houver).
+    // Prefere o arquivo local; recorre ao remoto para repos configurados por
+    // versões antigas (que commitavam o config direto no repo).
     try {
-      const raw = await getFileContent(token, owner, repo, CONFIG_FILE);
+      const localConfigPath = path.join(process.cwd(), CONFIG_FILE);
+      const raw = existsSync(localConfigPath)
+        ? readFileSync(localConfigPath, 'utf-8')
+        : await getFileContent(token, owner, repo, CONFIG_FILE);
       if (raw) {
         const existing = JSON.parse(raw);
         if (existing.project) {
@@ -155,7 +160,7 @@ export async function init(options) {
     filesSpinner.start('Criando arquivos no repositório...');
     try {
       await setupFiles(token, owner, repo, filesSpinner);
-      filesSpinner.stop('Arquivos criados (4 workflows + 2 issue templates)');
+      filesSpinner.stop(`Arquivos criados (${WORKFLOW_FILES.length} workflows + ${ISSUE_TEMPLATE_FILES.length} issue templates)`);
     } catch (err) {
       filesSpinner.stop('');
       p.log.error(`Erro ao criar arquivos: ${err.message}`);
@@ -165,10 +170,13 @@ export async function init(options) {
   }
 
   // --- Marcador de configuração (.spec-wave.json) ---
-  // Commitado no repo-alvo para que a skill detecte, em sessões futuras, que o
-  // init já rodou e qual project/versão foi usado. É a fonte de estado persistente.
+  // Gravado LOCALMENTE no diretório atual (não commitado direto no repo): é a
+  // fonte de estado persistente lida por info/refresh/uninstall/skill a partir
+  // do cwd. O usuário revisa e commita quando quiser.
+  const localConfigPath = path.join(process.cwd(), CONFIG_FILE);
+  let configWritten = false;
   const configSpinner = p.spinner();
-  configSpinner.start(`Gravando ${CONFIG_FILE}...`);
+  configSpinner.start(`Gravando ${CONFIG_FILE} local...`);
   try {
     const config = {
       version: pkg.version,
@@ -187,15 +195,9 @@ export async function init(options) {
       },
       initializedAt: new Date().toISOString(),
     };
-    await upsertFile(
-      token,
-      owner,
-      repo,
-      CONFIG_FILE,
-      JSON.stringify(config, null, 2) + '\n',
-      'chore: record spec-wave config [spec-wave]'
-    );
-    configSpinner.stop(`${CONFIG_FILE} gravado (spec-wave v${pkg.version})`);
+    writeFileSync(localConfigPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+    configWritten = true;
+    configSpinner.stop(`${CONFIG_FILE} gravado local (spec-wave v${pkg.version})`);
   } catch (err) {
     configSpinner.stop('');
     p.log.warn(`Não foi possível gravar ${CONFIG_FILE}: ${err.message}`);
@@ -214,10 +216,14 @@ export async function init(options) {
     `\n${chalk.green('✓')} spec-wave configurado com sucesso!\n\n` +
     (projectUrl ? `  Projeto: ${chalk.cyan(projectUrl)}\n\n` : '') +
     `  Próximos passos:\n` +
-    `  1. Adicione ${providerMeta.secret} como secret no repositório (provider: ${providerMeta.label})\n` +
-    `  2. Configure o board view para agrupar por "Etapa"\n` +
-    `  3. Crie uma Feature com o prefixo [FEATURE] no título\n` +
-    `  4. Use a skill spec-wave para guiar o fluxo\n\n` +
-    `  ${chalk.dim('Para usar a skill: adicione skill/SKILL.md ao seu projeto Claude Code')}`
+    (configWritten
+      ? `  1. Commite o ${CONFIG_FILE} quando quiser (git add ${CONFIG_FILE} && git commit)\n`
+      : '') +
+    `  ${configWritten ? '2' : '1'}. Adicione ${providerMeta.secret} como secret no repositório (provider: ${providerMeta.label})\n` +
+    `  ${configWritten ? '3' : '2'}. Configure o board view para agrupar por "Etapa"\n` +
+    `  ${configWritten ? '4' : '3'}. Crie uma Feature com o prefixo [FEATURE] no título\n` +
+    `  ${configWritten ? '5' : '4'}. Use a skill spec-wave para guiar o fluxo\n\n` +
+    `  ${chalk.dim('Para instalar a skill no seu agente: npx @spec-wave/cli install-skill')}\n\n` +
+    `  🌐 Acesse o Portal Web da ferramenta em ${chalk.cyan(PORTAL_URL)}`
   );
 }

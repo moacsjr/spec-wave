@@ -233,6 +233,31 @@ export async function getIssueParent(token, issueNodeId) {
   return { number: parent.number, title: parent.title, nodeId: parent.id };
 }
 
+// Lê o valor atual (nome da opção) de um campo SINGLE_SELECT para um item do
+// Project. Usado para garantir que a Etapa só avança (nunca retrocede).
+export async function getItemSingleSelectValue(token, itemId, fieldId) {
+  const client = makeClient(token);
+  const result = await client(`
+    query ItemValue($itemId: ID!) {
+      node(id: $itemId) {
+        ... on ProjectV2Item {
+          fieldValues(first: 50) {
+            nodes {
+              ... on ProjectV2ItemFieldSingleSelectValue {
+                name
+                field { ... on ProjectV2SingleSelectField { id } }
+              }
+            }
+          }
+        }
+      }
+    }
+  `, { itemId });
+  const nodes = result.node?.fieldValues?.nodes || [];
+  const value = nodes.find(n => n && n.field?.id === fieldId);
+  return value?.name ?? null;
+}
+
 // Define o valor de um campo SINGLE_SELECT para um item do Project.
 export async function setItemSingleSelect(token, projectId, itemId, fieldId, optionId) {
   const client = makeClient(token);

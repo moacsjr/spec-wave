@@ -4,6 +4,13 @@ on:
   issues:
     types: [labeled]
 
+# O evento `labeled` pode redisparar (re-add da label, retry de runner):
+# o concurrency serializa runs da mesma issue e o guard de idempotência
+# (label spec-wave:decomposed) descarta o run enfileirado.
+concurrency:
+  group: spec-wave-decompose-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
 jobs:
   decompose:
     if: >
